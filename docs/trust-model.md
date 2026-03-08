@@ -8,11 +8,9 @@ Hard guarantees enforced by zero-knowledge proofs. If a property is in this laye
 
 **What it covers:**
 - State transitions are valid (correct inputs, correct ordering, no replay)
-- Merkle tree updates are structurally correct (world model, vector index)
-- Blob commitments are authentic (MMR roots match data)
-- Soul hard constraints are enforced (the agent followed its mechanical rules)
-- Vector retrieval is correct (the returned memories are the actual nearest neighbors)
+- Merkle tree updates are structurally correct (vector index)
 - Nonces are monotonic (no gaps, no reordering)
+- Signatures are valid (only authorized operator can submit transitions)
 
 **What it means:**
 You can trust the agent's bookkeeping without trusting the operator. The state is what the proofs say it is.

@@ -16,9 +16,9 @@ Host                                      Jolt Guest (no_std)
 ┌────────────────────────────────┐        ┌─────────────────────────┐
 │ QMDB (keyless)                 │        │                         │
 │  - persistent MMR storage      │        │ MMR proof verification  │
-│  - batch → merkleize → apply   │─proof─>│ hamming distance check  │
-│  - proof generation            │        │ soul constraint check   │
-│                                │        │ output new state root   │
+│  - batch → merkleize → apply   │─proof─>│ nonce + sig validation  │
+│  - proof generation            │        │ output new state root   │
+│                                │        │                         │
 │ In-memory index                │        │                         │
 │  - Vec<MemoryEntry>            │        └─────────────────────────┘
 │  - flat scan (XOR + popcount)  │
@@ -34,7 +34,7 @@ Host                                      Jolt Guest (no_std)
 struct MemoryEntry {
     id: u64,                // unique, monotonically increasing
     embedding: [u64; 4],    // 256-bit binary vector
-    content_hash: [u8; 32], // hash of full content stored in data archive
+    content_hash: [u8; 32], // hash of full content posted as calldata
     core: bool,             // true = always loaded into agent context
     active: bool,           // false = soft deleted (superseded by a newer entry)
 }
@@ -113,9 +113,6 @@ The agent's live state runs ahead of the proven on-chain state by one batch. Sta
 - Verifies old MMR root matches current `vector_index_root`
 - Verifies MMR proofs from QMDB (lightweight `no_std` path verification)
 - Verifies the new root is correct given the old root + appended entries
-- Executes flat scan for query verification (XOR + popcount)
-- Confirms claimed top-k results are correct
-- Checks soul constraints
 - Outputs new `vector_index_root`
 
 The guest uses `mmr::proof` verification logic only — no QMDB, no `std`, no filesystem.
@@ -133,14 +130,6 @@ impl VectorDB {
     /// Rebuilds the in-memory index from QMDB on startup.
     pub fn open(config: QmdbConfig) -> Result<Self>;
 
-    /// Reconstruct from archived entries when local storage is lost.
-    /// Rebuilds QMDB and verifies the root matches the on-chain commitment.
-    pub fn reconstruct(
-        config: QmdbConfig,
-        entries: Vec<MemoryEntry>,
-        expected_root: [u8; 32],
-    ) -> Result<Self>;
-
     // === Writes ===
 
     /// Append a new memory entry. Returns the new MMR root.
@@ -148,14 +137,6 @@ impl VectorDB {
 
     /// Append a batch of entries. Returns the new MMR root.
     pub fn batch_append(&mut self, entries: Vec<MemoryEntry>) -> [u8; 32];
-
-    /// Modify an existing entry — deactivates the old, appends the new.
-    /// Returns the new MMR root.
-    pub fn modify(&mut self, old_id: u64, new_entry: MemoryEntry) -> [u8; 32];
-
-    /// Soft delete an entry — deactivates it and appends a tombstone.
-    /// Returns the new MMR root.
-    pub fn delete(&mut self, id: u64) -> [u8; 32];
 
     // === Reads ===
 
@@ -173,16 +154,6 @@ impl VectorDB {
     /// Current MMR root.
     pub fn root(&self) -> [u8; 32];
 
-    /// Generate an inclusion proof for an entry by ID.
-    pub fn prove_inclusion(&self, id: u64) -> Option<MmrProof>;
-
-    /// Verify an inclusion proof against a root.
-    pub fn verify_inclusion(
-        root: &[u8; 32],
-        entry: &MemoryEntry,
-        proof: &MmrProof,
-    ) -> bool;
-
     // === Witness ===
 
     /// Produce a witness for the current pending batch (diff only).
@@ -197,9 +168,8 @@ pub struct QueryResult {
 
 ### Design Decisions
 
-- **`new` vs `open` vs `reconstruct`** — three construction paths: fresh start, resume from local disk (QMDB persists), or rebuild from chain data when local storage is lost.
-- **Serialization is internal.** The public API takes and returns `MemoryEntry` structs. `commonware-codec` handles serialization for QMDB storage and leaf hashing internally.
-- **Witness contains diffs only.** The guest knows the old root. The witness provides appends, deactivations, and the QMDB-generated proofs.
+- **`new` vs `open`** — two construction paths: fresh start or resume from local disk (QMDB persists). Reconstruction is done by replaying appends through `new()` + `batch_append()`.
+- **Witness contains diffs only.** The guest knows the old root. The witness provides appends, deactivations, and the QMDB-generated proofs. Supports batching — a single witness can cover one or many interactions.
 - **All write methods return the new root.** The caller always knows the current commitment.
 
 ## Recovery Paths
@@ -207,8 +177,7 @@ pub struct QueryResult {
 | Scenario | Method | What Happens |
 |----------|--------|-------------|
 | Normal restart | `open()` | QMDB loads from disk, in-memory index rebuilt from QMDB |
-| Lost local storage | `reconstruct()` | Download entries from chain/blobs, rebuild QMDB, verify root |
-| Full verification | Replay from genesis | Replay all transitions, compare final root to on-chain state |
+| Reconstruction | Replay from genesis | Replay all transitions via `new()` + `batch_append()`, compare final root to on-chain state |
 
 ## Commonware Dependencies
 

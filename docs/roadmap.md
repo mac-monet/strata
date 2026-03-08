@@ -10,10 +10,10 @@ These are load-bearing — the thesis doesn't work without them.
 
 - **Soul document** — plain text constitution committed at genesis. Hard constraints extracted and enforced in the state transition function.
 - **Binary vector DB** — unified memory system with core/non-core tagging. Hamming distance, flat scan, merkle commitment. Core memories always loaded, non-core retrieved on demand.
-- **Blob storage** — MMR commitments via Commonware. Raw interactions, reasoning traces, and memory snapshots stored as blobs.
+- **Storage** — raw memory content posted as calldata alongside state roots. Verifiable via `content_hash` in each memory entry.
 - **ZK proving via Jolt** — at least one proven state transition demonstrating the full pipeline: input validation, merkle update, constraint checking, new state root.
 - **Reconstruction** — the killer demo. Shut the agent down, delete the server, reconstruct it purely from on-chain state and blobs. Show it remembers everything.
-- **Rollup contract on Base** — post state roots and blob commitments. Verify proofs on-chain.
+- **Rollup contract on Base** — post state roots and proofs. Verify proofs on-chain.
 
 ### Strong to Have
 

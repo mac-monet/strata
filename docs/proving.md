@@ -24,20 +24,6 @@ The Jolt guest program handles all deterministic state operations:
 - Vector index tree updates (adding/consolidating memory entries)
 - Membership and inclusion proofs
 
-**MMR operations**
-- Appending new blob data to the archive
-- Computing the updated blob_archive_root
-
-**Soul constraint enforcement**
-- Every hard constraint in the soul document is checked
-- If any constraint is violated, the guest program rejects the transition
-- The proof cannot be generated for an invalid transition
-
-**Vector queries**
-- XOR + popcount over binary embeddings
-- Top-k selection
-- Proof that the returned results are correct nearest neighbors
-
 ### Outside the Proof (Host / Operator)
 
 These operations are inherently non-deterministic or too expensive for ZK:
@@ -77,8 +63,6 @@ These operations are inherently non-deterministic or too expensive for ZK:
 4. Guest verifies:
    ├── input validity (signature, nonce)
    ├── merkle updates (vector index)
-   ├── MMR update (blob archive)
-   ├── soul constraints
    └── outputs new state root
           │
 5. Jolt generates proof of correct execution
@@ -89,9 +73,7 @@ These operations are inherently non-deterministic or too expensive for ZK:
 ## What the Proof Guarantees
 
 - **Integrity**: the new state was derived correctly from the old state + input
-- **Constraint compliance**: the agent followed every hard rule in its soul
 - **Consistency**: no replay, no reordering, no skipped transitions
-- **Commitment**: the blob archive root correctly reflects all stored data
 
 ## What the Proof Does Not Guarantee
 

@@ -10,15 +10,15 @@ The on-chain state is minimal — three fields that fully capture the agent's mi
 struct CoreState {
     soul: SoulDocument,
     vector_index_root: Hash,
-    blob_archive_root: Hash,
+    nonce: u64,
 }
 ```
 
 - **soul**: The agent's constitution (see [soul.md](./soul.md))
 - **vector_index_root**: Merkle root over the binary vector memory — the agent's unified knowledge store and retrieval index (see [vector-db.md](./vector-db.md))
-- **blob_archive_root**: MMR root committing to all raw interaction data stored in blobs (see [storage.md](./storage.md))
+- **nonce**: Monotonically increasing counter for state transitions
 
-This is everything needed to reconstruct the agent. If you have the core state and the blobs, you have the agent.
+Raw interaction data (conversation logs, reasoning traces) is posted as calldata alongside state roots. It's verifiable via `content_hash` in each `MemoryEntry` without needing a separate commitment. This is everything needed to reconstruct the agent.
 
 ## State Transitions
 
@@ -39,9 +39,7 @@ fn transition(state: CoreState, input: Input) -> (CoreState, Option<Action>)
 
 1. **Validates the input** — signed, nonced, well-formed
 2. **Updates the vector index** — new memory entries added, core memories consolidated
-3. **Appends to the blob archive** — raw interaction data committed via MMR
-4. **Checks soul constraints** — hard constraints verified, proof fails if violated
-5. **Produces an action** — the agent's response or external action, included as witness data
+3. **Produces an action** — the agent's response or external action, included as witness data
 
 ### Inside vs Outside the Proof
 
@@ -50,8 +48,6 @@ Not everything happens inside the ZK proof. The boundary is:
 **Inside Jolt (proven):**
 - State validation (nonces, signatures, ordering)
 - Vector index merkle tree updates (adding/consolidating memories)
-- MMR updates (blob archive commitment)
-- Soul constraint checking
 - Structural integrity of all data
 
 **Outside Jolt (trusted to operator):**
@@ -73,5 +69,4 @@ Every transition has a monotonically increasing nonce. This prevents:
 The genesis state contains:
 - The initial soul document
 - An empty vector index
-- An empty blob archive
 - Nonce 0

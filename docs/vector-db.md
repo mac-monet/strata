@@ -19,7 +19,7 @@ Binary embeddings solve this completely:
 struct MemoryEntry {
     id: u64,
     embedding: [u64; 4],    // 256-bit binary vector
-    content_hash: [u8; 32], // pointer to full content in data archive
+    content_hash: [u8; 32], // hash of full content posted as calldata
     core: bool,             // core memory: always loaded into agent context
     active: bool,           // false = soft deleted (superseded by newer version)
 }
@@ -86,6 +86,8 @@ The ZK proof for a vector query verifies:
 
 This gives **verifiable recall** — a novel primitive. In standard RAG systems, you trust that the retrieval was honest. With a provable vector DB, the retrieval itself is mathematically guaranteed.
 
+Retrieval proving is a standalone proof — not bundled into every state transition. State transition proofs (merkle updates, constraint checks) are covered in the [proof boundary spec](./specs/proof-boundary.md).
+
 ## Generating Binary Embeddings
 
 Two approaches:
@@ -97,11 +99,10 @@ Embedding generation happens off-chain (outside the ZK proof). The resulting bin
 
 ## Reconstruction
 
-On normal restart, QMDB loads the vector DB from disk — no reconstruction needed. If local storage is lost, the vector DB can be fully reconstructed from the data archive:
+On normal restart, QMDB loads the vector DB from disk — no reconstruction needed. If local storage is lost, the vector DB can be reconstructed from on-chain data:
 
-1. Pull archived data (verified against the data archive commitment)
-2. Re-embed all memories using the same embedding model
-3. Rebuild QMDB and the in-memory index
-4. Verify the resulting MMR root matches the on-chain `vector_index_root`
+1. Pull calldata containing memory content (verified against `content_hash` in each entry)
+2. Replay all appends through `new()` + `batch_append()`
+3. Verify the resulting root matches the on-chain `vector_index_root`
 
 When reconstructing, core memories are loaded first — they give the agent its identity before any interaction occurs. The full index is then available for on-demand retrieval.

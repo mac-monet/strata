@@ -18,9 +18,7 @@ The integration point is straightforward:
 The agent does not need a separate smart wallet. The rollup contract on L1 is the agent's on-chain presence and handles all transactional needs:
 
 - **State root posting** — the contract stores the latest proven state root and verifies ZK proofs
-- **Blob commitments** — the contract tracks blob archive roots (MMR commitments)
-- **Fund management** — the contract can hold and transfer assets, pay for blob storage, interact with other contracts
-- **Constraint enforcement** — soul hard constraints related to spending (e.g., "never spend more than X per transaction") are enforced at the proof level before any on-chain action occurs
+- **Fund management** — the contract can hold and transfer assets, interact with other contracts
 
 The rollup contract is the agent's single point of contact with L1. Everything the agent does on-chain flows through it.
 
