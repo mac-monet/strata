@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "jolt": {
+      "source": "a16z/jolt",
+      "sourceType": "github",
+      "computedHash": "97eb71a222d33151bb789c3572b992953488f236d386873f5f91e87ec5415ed8"
+    }
+  }
+}
