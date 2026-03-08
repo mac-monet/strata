@@ -7,7 +7,7 @@ Technical specifications for building Strata.
 ```
 strata/
 ├── crates/
-│   ├── core/          # shared types — CoreState, MemoryEntry, SoulDocument, serialization
+│   ├── core/          # shared types — CoreState, MemoryEntry, Input, Witness, serialization
 │   ├── guest/         # Jolt guest program — state transition function (runs in RISC-V)
 │   ├── vector-db/     # binary vector DB — hamming distance, flat scan, merkle commitment
 │   ├── host/          # orchestration — LLM calls, embedding, witness prep, proving
@@ -48,7 +48,7 @@ strata/
 
 | # | Task | Crate | Depends On | Spec |
 |---|------|-------|------------|------|
-| 1 | Core types | `core` | — | |
+| 1 | Core types | `core` | — | [core-types.md](./core-types.md) |
 | 2 | Binary vector DB | `vector-db` | core | [vector-db.md](./vector-db.md) |
 | 3 | Guest program | `guest` | core, vector-db | [proof-boundary.md](./proof-boundary.md) |
 | 4 | Host orchestration | `host` | core, guest | |
@@ -73,4 +73,5 @@ Steps 1-3 are the critical path. Steps 4-5 can be parallelized. Step 6 depends o
 | Spec | Covers |
 |------|--------|
 | [Proof Boundary](./proof-boundary.md) | What runs inside Jolt vs outside — the exact boundary between guest and host |
+| [Core Types](./core-types.md) | Shared types — CoreState, MemoryEntry, Input, Witness |
 | [Vector DB](./vector-db.md) | Binary vector DB implementation — QMDB storage, hamming distance, host/guest split |

@@ -8,14 +8,14 @@ The on-chain state is minimal — three fields that fully capture the agent's mi
 
 ```rust
 struct CoreState {
-    soul: SoulDocument,
-    vector_index_root: Hash,
+    soul_hash: [u8; 32],
+    vector_index_root: [u8; 32],
     nonce: u64,
 }
 ```
 
-- **soul**: The agent's constitution (see [soul.md](./soul.md))
-- **vector_index_root**: Merkle root over the binary vector memory — the agent's unified knowledge store and retrieval index (see [vector-db.md](./vector-db.md))
+- **soul_hash**: SHA-256 hash of the soul document text. Full text lives in the rollup contract's public storage (see [soul.md](./soul.md))
+- **vector_index_root**: MMR root over the binary vector memory — the agent's unified knowledge store and retrieval index (see [vector-db.md](./vector-db.md))
 - **nonce**: Monotonically increasing counter for state transitions
 
 Raw interaction data (conversation logs, reasoning traces) is posted as calldata alongside state roots. It's verifiable via `content_hash` in each `MemoryEntry` without needing a separate commitment. This is everything needed to reconstruct the agent.

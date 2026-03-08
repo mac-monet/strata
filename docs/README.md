@@ -52,13 +52,13 @@ The agent's on-chain state is minimal — three fields that capture everything n
 
 ```
 CoreState {
-    soul:              SoulDocument,   // identity, values, constraints
-    vector_index_root: Hash,           // merkle root over binary vector memory
-    nonce:             u64,            // monotonically increasing transition counter
+    soul_hash:         [u8; 32],   // hash of soul document (full text in contract storage)
+    vector_index_root: [u8; 32],   // MMR root over binary vector memory
+    nonce:             u64,        // monotonically increasing transition counter
 }
 ```
 
-Raw interaction data (conversation logs, reasoning traces) is posted as calldata alongside state roots and is verifiable via `content_hash` in each memory entry.
+The soul document's full text lives in the rollup contract's public storage — readable by anyone. Raw memory content is posted as calldata alongside state roots and is verifiable via `content_hash` in each memory entry.
 
 ## Components
 
