@@ -17,6 +17,8 @@ guest = { path = "./guest" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10"
+blake3 = "1"
+jolt-inlines-blake3 = { git = "https://github.com/a16z/jolt", features = ["host"] }
 hex = "0.4"
 
 [patch.crates-io]

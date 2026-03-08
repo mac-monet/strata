@@ -9,3 +9,4 @@ guest = []
 [dependencies]
 jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", features = ["guest-std"] }
 jolt-inlines-sha2 = { git = "https://github.com/a16z/jolt" }
+jolt-inlines-blake3 = { git = "https://github.com/a16z/jolt" }

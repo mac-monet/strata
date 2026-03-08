@@ -2,68 +2,73 @@
 
 ## What Was Tested
 
-Nonce verification + fixed-depth (16) binary Merkle tree update using SHA-256
-(`jolt-inlines-sha2`). The guest verifies each entry's old position was empty,
-then computes the new root.
+Nonce verification + fixed-depth (16) binary Merkle tree update, comparing
+SHA-256 (`jolt-inlines-sha2`) vs Blake3 (`jolt-inlines-blake3`).
 
-Per entry: 2 root computations x 16 levels x 1 SHA-256 = 32 SHA-256 hashes.
+Per entry: 2 root computations x 16 levels x 1 hash = 32 hashes.
 
 ## Benchmarks (Apple Silicon, 16 GB RAM)
 
-| Batch Size | Cycles    | Prove Time | Verify Time | max_trace_length | RAM Needed |
-|------------|-----------|------------|-------------|------------------|------------|
-| 1          | 244K      | 4.5s       | 0.09s       | 2^22 (4.2M)      | < 10 GB    |
-| 10         | 2.3M      | 22.6s      | 0.10s       | 2^22 (4.2M)      | < 10 GB    |
-| 100        | 23.2M     | —          | —           | 2^25 (33.5M)     | ~32 GB     |
+### SHA-256
 
-100 entries could not be proved on 16 GB RAM (needs 2^25 trace length → ~32 GB).
+| Batch | Cycles | Prove  | Verify | Trace Length | RAM    |
+|-------|--------|--------|--------|--------------|--------|
+| 1     | 244K   | 4.5s   | 0.09s  | 2^22 (4.2M)  | < 10 GB |
+| 10    | 2.3M   | 22.6s  | 0.10s  | 2^22 (4.2M)  | < 10 GB |
+| 100   | 23.2M  | —      | —      | 2^25 (33.5M) | ~32 GB  |
+
+### Blake3
+
+| Batch | Cycles | Prove  | Verify | Trace Length | RAM    |
+|-------|--------|--------|--------|--------------|--------|
+| 1     | 65K    | 2.9s   | 0.08s  | 2^22 (4.2M)  | < 10 GB |
+| 10    | 538K   | 8.6s   | 0.10s  | 2^22 (4.2M)  | < 10 GB |
+| 100   | 5.4M   | 48.4s  | 0.11s  | 2^23 (8.4M)  | < 10 GB |
+
+### Head-to-Head
+
+| Metric              | SHA-256  | Blake3   | Blake3 advantage |
+|---------------------|----------|----------|------------------|
+| Cycles per entry    | ~230K    | ~54K     | **4.3x fewer**   |
+| 10-entry prove time | 22.6s    | 8.6s     | **2.6x faster**  |
+| 100-entry feasible  | No (32GB)| Yes (10GB)| **Blake3 wins**  |
 
 ## Key Findings
 
-1. **SHA-256 inline works well.** `jolt-inlines-sha2::Sha256::digest()` is a
-   custom RISC-V instruction, not software SHA-256. ~230K cycles per entry
-   (32 hashes).
+1. **Blake3 is dramatically cheaper to prove.** 4.3x fewer cycles per entry
+   because the Blake3 inline instruction is simpler than SHA-256's compression
+   function.
 
-2. **Proving time scales with actual cycles, not just padded trace.** 1 entry
-   (244K cycles) proves in 4.5s vs 10 entries (2.3M cycles) in 22.6s, despite
-   both fitting in the same 2^22 trace.
+2. **Blake3 enables 100-entry batches on 16 GB RAM.** SHA-256 cannot — it needs
+   2^25 trace length (~32 GB). This is the single biggest practical difference.
 
-3. **Verification is constant ~0.1s** regardless of batch size.
+3. **Verification is constant ~0.1s** regardless of hash function or batch size.
 
-4. **Memory is the bottleneck for large batches.** Proving time is acceptable
-   (would be ~2 min for 100 entries on a 32+ GB machine), but RAM requirements
-   scale with `max_trace_length`.
+4. **No showstopper issues** with either hash function. Both inlines work
+   correctly in the Jolt RISC-V guest.
 
-5. **Guest std mode works.** Used `guest-std` feature for Vec params. Production
-   would use `no_std` + `UntrustedAdvice` to keep params fixed-size.
-
-6. **No showstopper issues.** no_std compatibility, RISC-V compilation, and
-   Jolt's proving pipeline all work as expected.
-
-## Per-Entry Cost Breakdown
-
-~230K cycles per merkle insert:
-- 2 × compute_root (verify empty + compute new): 16 SHA-256 each = 32 total
-- Each SHA-256 inline: ~7K cycles (estimated from total)
-- Byte copying/parsing: minimal overhead
+5. **Guest std mode works.** Used `guest-std` for Vec params. Production would
+   use `no_std` + `UntrustedAdvice`.
 
 ## Implications for Strata
 
-- **Batch size sweet spot: 10-50 entries** on typical hardware (16-32 GB RAM)
-- **Proving can run async** — 23s is acceptable for a rollup batch
-- **Blake3 untested** — `jolt-inlines-blake3` exists and may reduce cycle count
-- **QMDB MMR proofs** will have different structure than this fixed-depth tree,
-  but the core pattern (verify old root + compute new root with SHA-256) is the
-  same
+- **Strong recommendation: use Blake3** for the merkle tree hash function.
+  4.3x cycle reduction directly translates to cheaper proving and lower RAM.
+- **Batch size sweet spot with Blake3:** 50-100 entries on 16 GB, 200+ on 32 GB.
+- **Commonware supports both** SHA-256 and Blake3, so this is a config choice.
+- **QMDB MMR proofs** will have different structure but same core pattern.
 
 ## How to Run
 
 ```bash
 cd spikes/jolt-merkle
-RUST_LOG=info cargo run --release -- 1      # single entry
-RUST_LOG=info cargo run --release -- 10     # batch of 10
-RUST_LOG=info cargo run --release -- 1 10   # both sequentially
-```
 
-To test 100 entries, increase `max_trace_length` to `33554432` in
-`guest/src/lib.rs` and run on a machine with 32+ GB RAM.
+# SHA-256
+RUST_LOG=info cargo run --release -- 1 10
+
+# Blake3
+RUST_LOG=info cargo run --release -- --blake3 1 10 100
+
+# Both (side-by-side comparison)
+RUST_LOG=info cargo run --release -- --both 10
+```
