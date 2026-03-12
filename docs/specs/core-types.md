@@ -20,12 +20,28 @@ struct CoreState {
 - `vector_index_root` — MMR root over all `MemoryEntry` values in the vector DB (from QMDB).
 - `nonce` — monotonically increasing counter. Incremented on every proven state transition.
 
-### Genesis
+### GenesisConfig
+
+Immutable configuration fixed at genesis. Produces the initial `CoreState`.
+
+```rust
+struct GenesisConfig {
+    soul_hash: [u8; 32],
+    operator_key: [u8; 32],
+    initial_vector_index_root: [u8; 32],
+}
+```
+
+- `soul_hash` — SHA-256 hash of the soul document text.
+- `operator_key` — ed25519 public key authorized to sign inputs.
+- `initial_vector_index_root` — starting MMR root (typically the empty tree root).
+
+`GenesisConfig::genesis_state()` produces:
 
 ```rust
 CoreState {
-    soul_hash: sha256(soul_text),
-    vector_index_root: EMPTY_MMR_ROOT,
+    soul_hash: config.soul_hash,
+    vector_index_root: config.initial_vector_index_root,
     nonce: 0,
 }
 ```
@@ -74,7 +90,7 @@ enum InputPayload {
 
 - `nonce` — must equal `current_state.nonce + 1`. Guest rejects otherwise.
 - `signature` — ed25519 signature over the serialized payload + nonce. Proves the authorized operator submitted this transition.
-- `payload` — what kind of transition this is. MVP only has `MemoryUpdate`. The actual memory data comes from the Witness, not the Input.
+- `payload` — what kind of transition this is. MVP only has `MemoryUpdate`. The actual memory diff and content blobs live outside the `Input`: the replay path uses `TransitionRecord`, while the proving path uses `Witness`.
 
 ### Why payload is separate from witness
 
@@ -102,6 +118,63 @@ A single witness can cover one interaction or many (batched). The guest doesn't 
 
 Type alias or re-export from `commonware-storage`. The exact shape depends on QMDB's proof format. Not defined here — it comes from the dependency.
 
+## TransitionRecord
+
+Canonical replay payload for one accepted state transition. Used for persistence and reconstruction — distinct from the `Witness` which is the guest-side proving payload.
+
+```rust
+struct TransitionRecord {
+    input: Input,
+    delta: MemoryDelta,
+    contents: Vec<MemoryContent>,
+}
+```
+
+- `input` — the signed input that authorized this transition.
+- `delta` — the structured memory diff (new entries + deactivations).
+- `contents` — the full content blobs for each new entry, posted as calldata.
+
+### MemoryDelta
+
+```rust
+struct MemoryDelta {
+    new_entries: Vec<MemoryEntry>,
+    deactivated_ids: Vec<u64>,
+}
+```
+
+- `new_entries` — entries to append. Must be strictly increasing by id. Must all be `active: true`.
+- `deactivated_ids` — IDs being marked inactive. Must be strictly increasing.
+- A delta cannot add and deactivate the same id.
+
+### MemoryContent
+
+```rust
+struct MemoryContent {
+    memory_id: u64,
+    bytes: Vec<u8>,
+}
+```
+
+Each new entry must have exactly one corresponding `MemoryContent`. The content's SHA-256 hash must match the entry's `content_hash`.
+
+### ValidationError
+
+Validation failures returned by `TransitionRecord::validate()` and `validate_against()`:
+
+- `MalformedOperatorKey` — operator key bytes are not valid ed25519
+- `InvalidNonce` — signed nonce doesn't match expected `state.nonce + 1`
+- `InvalidSignature` — signature doesn't verify against operator key
+- `NewEntriesOutOfOrder` — new entry IDs not strictly increasing
+- `InactiveNewEntry` — a new entry has `active: false`
+- `DeactivatedIdsOutOfOrder` — deactivated IDs not strictly increasing
+- `ConflictingMemoryId` — same ID appears in both new entries and deactivated IDs
+- `ContentCountMismatch` — number of content blobs doesn't match number of new entries
+- `ContentIdMismatch` — content blob ID doesn't match its corresponding entry ID
+- `ContentHashMismatch` — content hash doesn't match committed `content_hash`
+
+`validate_against(state, operator_key)` checks nonce before signature (cheap check first).
+
 ## Transition Function
 
 The guest's entry point:
@@ -122,11 +195,16 @@ Panics (fails to generate proof) if:
 
 | Type | Crate | `no_std` | Notes |
 |------|-------|----------|-------|
+| `GenesisConfig` | `strata-core` | yes | Fixed-size, produces initial `CoreState` |
 | `CoreState` | `strata-core` | yes | Fixed-size, all arrays |
 | `MemoryEntry` | `strata-core` | yes | Fixed-size |
-| `Input` | `strata-core` | yes | Needs `alloc` for payload enum |
+| `Input` | `strata-core` | yes | Fixed-size |
 | `InputPayload` | `strata-core` | yes | MVP: single variant |
-| `Witness` | `strata-core` | yes | Needs `alloc` for Vec fields |
+| `TransitionRecord` | `strata-core` | yes | Needs `alloc` for Vec fields |
+| `MemoryDelta` | `strata-core` | yes | Needs `alloc` for Vec fields |
+| `MemoryContent` | `strata-core` | yes | Needs `alloc` for content bytes |
+| `ValidationError` | `strata-core` | yes | Validation failure enum |
+| `Witness` | proof layer (`strata-guest` or `strata-proof-types`) | yes | Guest-side proving payload, intentionally separate from canonical replay data |
 | `MerkleProof` | re-export from commonware | yes | Defined by QMDB |
 | `QueryResult` | `strata-vector-db` | no | Host-only, not needed in guest |
 | `VectorDB` | `strata-vector-db` | no | Host-only, wraps QMDB |
