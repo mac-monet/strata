@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/strata-core"]
+resolver = "2"
+
 [package]
 name = "strata"
 version = "0.1.0"
