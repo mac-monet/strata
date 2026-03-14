@@ -4,12 +4,8 @@ use core::fmt;
 /// Schema-level validation failures for canonical transition data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidationError {
-    /// The stored operator public key bytes cannot be decoded as ed25519.
-    MalformedOperatorKey,
     /// The signed nonce does not match the next expected state nonce.
     InvalidNonce { expected: Nonce, actual: Nonce },
-    /// The input signature does not verify against the authorized operator key.
-    InvalidSignature,
     /// Every new memory entry must have exactly one corresponding content blob.
     ContentCountMismatch { entries: usize, contents: usize },
     /// Content blobs must line up one-for-one with the new entry ids.
@@ -24,7 +20,6 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MalformedOperatorKey => f.write_str("operator key is not valid ed25519"),
             Self::InvalidNonce { expected, actual } => {
                 write!(
                     f,
@@ -32,7 +27,6 @@ impl fmt::Display for ValidationError {
                     expected, actual
                 )
             }
-            Self::InvalidSignature => f.write_str("input signature did not verify"),
             Self::ContentCountMismatch { entries, contents } => write!(
                 f,
                 "content count mismatch: expected {entries} content blobs, got {contents}"

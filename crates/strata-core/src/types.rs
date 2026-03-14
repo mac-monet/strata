@@ -5,12 +5,8 @@ use crate::{
 use alloc::vec::Vec;
 use bytes::{Buf, BufMut};
 use commonware_codec::{
-    Encode, EncodeSize, Error as CodecError, FixedSize, RangeCfg, Read, ReadExt, Write,
+    EncodeSize, Error as CodecError, FixedSize, RangeCfg, Read, ReadExt, Write,
 };
-use commonware_cryptography::{Signer as _, Verifier as _, ed25519};
-
-/// Domain separation namespace for signed inputs.
-pub const INPUT_SIGNATURE_NAMESPACE: &[u8] = b"strata/input/v1";
 
 /// Immutable configuration fixed at genesis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,24 +196,10 @@ impl FixedSize for InputPayload {
     const SIZE: usize = u8::SIZE;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct SignedInput {
-    nonce: Nonce,
-    payload: InputPayload,
-}
-
-impl Write for SignedInput {
-    fn write(&self, buf: &mut impl BufMut) {
-        self.nonce.write(buf);
-        self.payload.write(buf);
-    }
-}
-
-impl FixedSize for SignedInput {
-    const SIZE: usize = Nonce::SIZE + InputPayload::SIZE;
-}
-
-/// Signed input authorized by the operator.
+/// Operator-authorized input for a state transition.
+///
+/// The signature is stored as raw bytes. Signature creation and verification
+/// are application-level concerns handled outside the core types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Input {
@@ -227,34 +209,11 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn new_signed(nonce: Nonce, payload: InputPayload, signer: &ed25519::PrivateKey) -> Self {
-        let signed = SignedInput { nonce, payload };
-        let message = signed.encode();
-        let signature = signer.sign(INPUT_SIGNATURE_NAMESPACE, message.as_ref());
-
+    pub const fn new(nonce: Nonce, payload: InputPayload, signature: InputSignature) -> Self {
         Self {
             nonce,
             payload,
-            signature: signature.into(),
-        }
-    }
-
-    pub fn verify(&self, operator_key: &OperatorPublicKey) -> Result<(), ValidationError> {
-        let public_key = operator_key.decode()?;
-        let signed = SignedInput {
-            nonce: self.nonce,
-            payload: self.payload,
-        };
-        let message = signed.encode();
-
-        if public_key.verify(
-            INPUT_SIGNATURE_NAMESPACE,
-            message.as_ref(),
-            &self.signature.decode(),
-        ) {
-            Ok(())
-        } else {
-            Err(ValidationError::InvalidSignature)
+            signature,
         }
     }
 }
@@ -387,11 +346,8 @@ impl TransitionRecord {
         Ok(())
     }
 
-    pub fn validate_against(
-        &self,
-        state: &CoreState,
-        operator_key: &OperatorPublicKey,
-    ) -> Result<(), ValidationError> {
+    /// Validate nonce continuity against current state, then validate contents.
+    pub fn validate_against(&self, state: &CoreState) -> Result<(), ValidationError> {
         let expected = state.nonce.next();
         if self.input.nonce != expected {
             return Err(ValidationError::InvalidNonce {
@@ -400,17 +356,16 @@ impl TransitionRecord {
             });
         }
 
-        self.input.verify(operator_key)?;
         self.validate()
     }
 
+    /// Validate and apply: returns the new state with the given vector index root.
     pub fn apply(
         &self,
         state: &CoreState,
-        operator_key: &OperatorPublicKey,
         next_vector_index_root: VectorRoot,
     ) -> Result<CoreState, ValidationError> {
-        self.validate_against(state, operator_key)?;
+        self.validate_against(state)?;
         state.advance(self.input.nonce, next_vector_index_root)
     }
 }
@@ -476,14 +431,13 @@ mod tests {
     use super::*;
     use alloc::vec;
     use commonware_codec::{Decode, DecodeExt, Encode};
-    use commonware_cryptography::ed25519;
 
-    fn sample_signer() -> ed25519::PrivateKey {
-        ed25519::PrivateKey::from_seed(7)
-    }
-
-    fn sample_operator_key() -> OperatorPublicKey {
-        sample_signer().public_key().into()
+    fn sample_input(nonce: u64) -> Input {
+        Input::new(
+            Nonce::new(nonce),
+            InputPayload::MemoryUpdate,
+            InputSignature::default(),
+        )
     }
 
     fn sample_entry(id: u64, text: &[u8]) -> (MemoryEntry, MemoryContent) {
@@ -502,7 +456,7 @@ mod tests {
     fn genesis_state_uses_genesis_config() {
         let config = GenesisConfig::new(
             SoulHash::digest(b"soul"),
-            sample_operator_key(),
+            OperatorPublicKey::new([7u8; 32]),
             VectorRoot::new([9u8; 32]),
         );
 
@@ -517,20 +471,16 @@ mod tests {
     }
 
     #[test]
-    fn input_signatures_round_trip_and_verify() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
+    fn input_round_trips() {
+        let input = sample_input(1);
         let encoded = input.encode();
         let decoded = Input::decode(encoded).unwrap();
-
         assert_eq!(decoded, input);
-        assert_eq!(decoded.verify(&signer.public_key().into()), Ok(()));
     }
 
     #[test]
     fn transition_record_round_trips() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
+        let input = sample_input(1);
         let (entry_a, content_a) = sample_entry(1, b"alpha");
         let (entry_b, content_b) = sample_entry(2, b"beta");
         let record = TransitionRecord::new(
@@ -549,8 +499,7 @@ mod tests {
 
     #[test]
     fn transition_record_rejects_hash_mismatch() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
+        let input = sample_input(1);
         let (entry, _) = sample_entry(1, b"alpha");
         let wrong_content = MemoryContent::new(MemoryId::new(1), b"not alpha".to_vec());
         let record = TransitionRecord::new(input, vec![entry], vec![wrong_content]);
@@ -565,19 +514,17 @@ mod tests {
 
     #[test]
     fn apply_advances_state_when_transition_is_valid() {
-        let signer = sample_signer();
-        let operator_key: OperatorPublicKey = signer.public_key().into();
         let initial_state = CoreState {
             soul_hash: SoulHash::digest(b"soul"),
             vector_index_root: VectorRoot::new([0u8; 32]),
             nonce: Nonce::new(0),
         };
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
+        let input = sample_input(1);
         let (entry, content) = sample_entry(1, b"alpha");
         let record = TransitionRecord::new(input, vec![entry], vec![content]);
 
         let next_state = record
-            .apply(&initial_state, &operator_key, VectorRoot::new([1u8; 32]))
+            .apply(&initial_state, VectorRoot::new([1u8; 32]))
             .unwrap();
 
         assert_eq!(
@@ -592,19 +539,17 @@ mod tests {
 
     #[test]
     fn apply_rejects_wrong_nonce() {
-        let signer = sample_signer();
-        let operator_key: OperatorPublicKey = signer.public_key().into();
         let state = CoreState {
             soul_hash: SoulHash::digest(b"soul"),
             vector_index_root: VectorRoot::new([0u8; 32]),
             nonce: Nonce::new(4),
         };
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
+        let input = sample_input(1);
         let (entry, content) = sample_entry(1, b"alpha");
         let record = TransitionRecord::new(input, vec![entry], vec![content]);
 
         assert_eq!(
-            record.apply(&state, &operator_key, VectorRoot::new([1u8; 32])),
+            record.apply(&state, VectorRoot::new([1u8; 32])),
             Err(ValidationError::InvalidNonce {
                 expected: Nonce::new(5),
                 actual: Nonce::new(1),

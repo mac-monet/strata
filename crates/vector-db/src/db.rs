@@ -4,6 +4,7 @@ use commonware_codec::Encode;
 use commonware_cryptography::blake3::Blake3;
 use commonware_runtime::{Clock, Metrics, Storage as RStorage};
 use commonware_storage::mmr::{
+    Readable,
     journaled::{self, Mmr},
     Location, Proof, StandardHasher,
 };
@@ -143,6 +144,22 @@ impl<E: RStorage + Clock + Metrics> VectorDB<E> {
     /// Current MMR root as a VectorRoot.
     pub fn root(&self) -> VectorRoot {
         digest_to_root(&self.mmr.root())
+    }
+
+    /// Peak digests of the MMR in decreasing height order.
+    ///
+    /// Used by the host to construct a [`Witness`] for guest transition verification.
+    pub fn peak_digests(&self) -> Vec<[u8; 32]> {
+        self.mmr
+            .peak_iterator()
+            .map(|(pos, _height)| {
+                let digest = Readable::get_node(&self.mmr, pos)
+                    .expect("peak node must exist");
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(digest.as_ref());
+                bytes
+            })
+            .collect()
     }
 
     /// Number of entries in the index.

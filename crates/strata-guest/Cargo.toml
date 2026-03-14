@@ -1,0 +1,21 @@
+[package]
+name = "strata-guest"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["std", "blake3"]
+std = ["strata-core/std", "commonware-codec/std", "commonware-cryptography?/std"]
+serde = ["dep:serde", "strata-core/serde"]
+blake3 = ["dep:commonware-cryptography"]
+
+[dependencies]
+strata-core = { path = "../strata-core", default-features = false }
+commonware-codec = { version = "2026.3.0", default-features = false }
+commonware-cryptography = { version = "2026.3.0", default-features = false, optional = true }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+
+[dev-dependencies]
+commonware-cryptography = "2026.3.0"
+commonware-runtime = "2026.3.0"
+commonware-storage = { version = "2026.3.0", features = ["std"] }

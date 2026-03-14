@@ -13,6 +13,6 @@ pub use primitives::{
     OperatorPublicKey, SoulHash, VectorRoot,
 };
 pub use types::{
-    CoreState, GenesisConfig, INPUT_SIGNATURE_NAMESPACE, Input, InputPayload, MemoryContent,
-    MemoryContentCfg, MemoryEntry, TransitionRecord, TransitionRecordCfg,
+    CoreState, GenesisConfig, Input, InputPayload, MemoryContent, MemoryContentCfg, MemoryEntry,
+    TransitionRecord, TransitionRecordCfg,
 };

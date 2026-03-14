@@ -1,7 +1,5 @@
-use crate::ValidationError;
 use bytes::{Buf, BufMut};
-use commonware_codec::{DecodeExt, Error as CodecError, FixedSize, Read, ReadExt, Write};
-use commonware_cryptography::{Hasher, Sha256, ed25519};
+use commonware_codec::{Error as CodecError, FixedSize, Read, ReadExt, Write};
 
 const HASH_BYTES: usize = 32;
 const PUBLIC_KEY_BYTES: usize = 32;
@@ -112,20 +110,18 @@ macro_rules! impl_fixed_u64_type {
     };
 }
 
-fn sha256_array(bytes: &[u8]) -> [u8; HASH_BYTES] {
-    let digest = Sha256::hash(bytes);
-    let mut array = [0u8; HASH_BYTES];
-    array.copy_from_slice(digest.as_ref());
-    array
+fn blake3_array(bytes: &[u8]) -> [u8; HASH_BYTES] {
+    *blake3::hash(bytes).as_bytes()
 }
 
+#[cfg(feature = "serde")]
 fn copy_array<const N: usize>(bytes: &[u8]) -> [u8; N] {
     let mut array = [0u8; N];
     array.copy_from_slice(bytes);
     array
 }
 
-/// SHA-256 digest of the soul document text.
+/// Blake3 digest of the soul document text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -134,13 +130,13 @@ pub struct SoulHash([u8; HASH_BYTES]);
 
 impl SoulHash {
     pub fn digest(bytes: &[u8]) -> Self {
-        Self(sha256_array(bytes))
+        Self(blake3_array(bytes))
     }
 }
 
 impl_fixed_bytes_type!(SoulHash, HASH_BYTES);
 
-/// SHA-256 digest of stored memory content bytes.
+/// Blake3 digest of stored memory content bytes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -149,7 +145,7 @@ pub struct ContentHash([u8; HASH_BYTES]);
 
 impl ContentHash {
     pub fn digest(bytes: &[u8]) -> Self {
-        Self(sha256_array(bytes))
+        Self(blake3_array(bytes))
     }
 }
 
@@ -171,34 +167,12 @@ impl_fixed_bytes_type!(VectorRoot, HASH_BYTES);
 #[repr(transparent)]
 pub struct OperatorPublicKey([u8; PUBLIC_KEY_BYTES]);
 
-impl OperatorPublicKey {
-    pub fn decode(self) -> Result<ed25519::PublicKey, ValidationError> {
-        ed25519::PublicKey::decode(self.0.as_slice())
-            .map_err(|_| ValidationError::MalformedOperatorKey)
-    }
-}
-
-impl From<ed25519::PublicKey> for OperatorPublicKey {
-    fn from(value: ed25519::PublicKey) -> Self {
-        Self(copy_array(value.as_ref()))
-    }
-}
-
 impl_fixed_bytes_type!(OperatorPublicKey, PUBLIC_KEY_BYTES);
 
 /// Signature over a canonical `Input`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", serde(transparent))]
 #[repr(transparent)]
 pub struct InputSignature([u8; SIGNATURE_BYTES]);
-
-impl InputSignature {
-    pub(crate) fn decode(self) -> ed25519::Signature {
-        ed25519::Signature::decode(self.0.as_slice())
-            .expect("64-byte ed25519 signature bytes always decode")
-    }
-}
 
 impl Default for InputSignature {
     fn default() -> Self {
@@ -206,13 +180,46 @@ impl Default for InputSignature {
     }
 }
 
-impl From<ed25519::Signature> for InputSignature {
-    fn from(value: ed25519::Signature) -> Self {
-        Self(copy_array(value.as_ref()))
+impl_fixed_bytes_type!(InputSignature, SIGNATURE_BYTES);
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for InputSignature {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
     }
 }
 
-impl_fixed_bytes_type!(InputSignature, SIGNATURE_BYTES);
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for InputSignature {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = InputSignature;
+            fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+                f.write_str("64 bytes")
+            }
+            fn visit_bytes<E: serde::de::Error>(self, v: &[u8]) -> Result<InputSignature, E> {
+                if v.len() != SIGNATURE_BYTES {
+                    return Err(E::invalid_length(v.len(), &self));
+                }
+                Ok(InputSignature(copy_array(v)))
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<InputSignature, A::Error> {
+                let mut arr = [0u8; SIGNATURE_BYTES];
+                for (i, byte) in arr.iter_mut().enumerate() {
+                    *byte = seq
+                        .next_element()?
+                        .ok_or_else(|| serde::de::Error::invalid_length(i, &self))?;
+                }
+                Ok(InputSignature(arr))
+            }
+        }
+        deserializer.deserialize_bytes(Visitor)
+    }
+}
 
 /// Monotonic transition counter.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]

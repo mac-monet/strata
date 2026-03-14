@@ -2352,10 +2352,22 @@ version = "0.1.0"
 name = "strata-core"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "bytes",
  "commonware-codec",
- "commonware-cryptography",
  "serde",
+]
+
+[[package]]
+name = "strata-guest"
+version = "0.1.0"
+dependencies = [
+ "commonware-codec",
+ "commonware-cryptography",
+ "commonware-runtime",
+ "commonware-storage",
+ "serde",
+ "strata-core",
 ]
 
 [[package]]
