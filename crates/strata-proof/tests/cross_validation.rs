@@ -11,7 +11,7 @@ use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
 use strata_core::{
     BinaryEmbedding, ContentHash, CoreState, MemoryEntry, MemoryId, Nonce, SoulHash, VectorRoot,
 };
-use strata_guest::{Blake3Hasher, Witness, compute_root, simulate_appends, transition};
+use strata_proof::{Blake3Hasher, Witness, compute_root, simulate_appends, transition};
 
 fn make_config(suffix: &str, context: &deterministic::Context) -> journaled::Config {
     let page_size = NonZeroU16::new(4096).unwrap();
@@ -198,7 +198,7 @@ fn incremental_append_matches() {
         assert_eq!(mid_root_real, mid_root_guest, "mid roots must match");
 
         // Guest: verify_append with batch 2
-        let final_root_guest = strata_guest::verify_append::<Blake3Hasher>(
+        let final_root_guest = strata_proof::verify_append::<Blake3Hasher>(
             &peaks,
             count,
             &mid_root_guest,

@@ -40,7 +40,7 @@ Once reconstructed, the agent needs:
 
 1. **An LLM** — any compatible model can serve as the agent's reasoning engine
 2. **An embedding model** — to generate query embeddings for memory retrieval
-3. **Host bindings** — API access, network, etc. (environment-dependent)
+3. **`strata-agent`** — the host runtime providing API access, A2A server, L1 connectivity, and prover invocation
 
 The soul document becomes the system prompt. Core memories from the vector DB are always loaded as context. Non-core memories are retrieved on demand. Different operators may use different LLMs, which affects the quality of the agent's reasoning but not its identity or memory.
 

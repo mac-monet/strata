@@ -185,7 +185,7 @@ Panics (fails to generate proof) if:
 | `TransitionRecord` | `strata-core` | yes | Needs `alloc` for Vec fields |
 | `MemoryContent` | `strata-core` | yes | Needs `alloc` for content bytes |
 | `ValidationError` | `strata-core` | yes | Validation failure enum |
-| `Witness` | proof layer (`strata-guest` or `strata-proof-types`) | yes | Guest-side proving payload, intentionally separate from canonical replay data |
+| `Witness` | `strata-proof` | yes | Proving payload, intentionally separate from canonical replay data |
 | `MerkleProof` | re-export from commonware | yes | Defined by Journaled MMR |
 | `QueryResult` | `strata-vector-db` | no | Host-only, not needed in guest |
 | `VectorDB` | `strata-vector-db` | no | Host-only, wraps Journaled MMR |

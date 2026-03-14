@@ -4,7 +4,7 @@ use jolt_sdk::UntrustedAdvice;
 use strata_core::{
     BinaryEmbedding, ContentHash, CoreState, MemoryEntry, MemoryId, Nonce, SoulHash, VectorRoot,
 };
-use strata_guest::{Blake3Hasher, Witness, compute_root};
+use strata_proof::{Blake3Hasher, Witness, compute_root};
 use tracing::info;
 
 fn main() {

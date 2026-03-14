@@ -13,7 +13,7 @@ The storage transport is pluggable. The vector DB only stores `content_hash` —
 - **EIP-4844 blobs** — cheaper than calldata for larger payloads
 - **External DA layer** — Celestia, EigenDA, etc.
 
-Changing the transport requires updating the host's posting logic and the reconstruction logic (where to download from). The vector DB, guest program, and on-chain commitment are unchanged.
+Changing the transport requires updating `strata-agent`'s posting and reconstruction logic (where to download from). The vector DB, guest program, and on-chain commitment are unchanged.
 
 ## Verification
 

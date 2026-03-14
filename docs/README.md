@@ -31,20 +31,24 @@ Most people think of rollups as scaling solutions. Strata reframes them as agent
                       │ posts proofs + commitments
                       │
 ┌─────────────────────────────────────────────────┐
-│               Strata Agent Rollup                │
+│            strata-agent (host runtime)           │
+│  HTTP/A2A server, LLM + embedding clients,       │
+│  witness prep, prover invocation, L1 posting,    │
+│  reconstruction replay                           │
 │                                                  │
 │  ┌──────┐  ┌──────────────────────────────────┐ │
 │  │ Soul │  │ Binary Vector DB (Hamming/XOR)   │ │
-│  │      │  │ append-only retrieval index        │ │
+│  │      │  │ append-only retrieval index       │ │
 │  └──────┘  └──────────────────────────────────┘ │
 │                                                  │
-│                                                  │
 │  ┌────────────────────────────────────────────┐  │
-│  │        Jolt Prover (RISC-V / ZK)          │  │
+│  │     strata-proof + Jolt (RISC-V / ZK)     │  │
 │  │     state transitions, constraints         │  │
 │  └────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
+
+The only meaningful boundary is **inside vs outside the ZK proof**. `strata-proof` owns the inside (deterministic state verification). `strata-agent` owns everything else — there is no separate "host" vs "runtime".
 
 ## Core State
 
@@ -73,6 +77,16 @@ The soul document's full text lives in the rollup contract's public storage — 
 | [Reconstruction](./reconstruction.md) | How anyone can rebuild and verify the agent | The immortality property |
 | [Trust Model](./trust-model.md) | Mathematical + attestable trust | Two-layer verification |
 | [Roadmap](./roadmap.md) | MVP scope, priorities, and demo plan | What to build first |
+
+## Crates
+
+| Crate | Role | Status |
+|-------|------|--------|
+| `strata-core` | Canonical shared types, serialization, validation (no_std) | Done |
+| `strata-proof` | ZK transition logic — MMR ops, nonce validation, integrity checks | Done |
+| `strata-vector-db` | Binary vector DB over Journaled MMR — hamming queries, merkle commitment | Done |
+| `strata-jolt` | Jolt proving scaffold — guest compilation, proving, verification | Done (PoC) |
+| `strata-agent` | Host runtime — HTTP/A2A, LLM, embeddings, prover, L1, reconstruction | Not yet built |
 
 ## Stack
 

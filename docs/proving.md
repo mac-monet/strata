@@ -24,9 +24,9 @@ The Jolt guest program handles all deterministic state operations:
 - Vector index tree updates (adding/consolidating memory entries)
 - Membership and inclusion proofs
 
-### Outside the Proof (Host / Operator)
+### Outside the Proof (`strata-agent`)
 
-These operations are inherently non-deterministic or too expensive for ZK:
+These operations are inherently non-deterministic or too expensive for ZK. They all live in `strata-agent` — the single host-side crate that owns everything outside the proof boundary.
 
 **LLM inference**
 - Generating responses to interactions
@@ -41,15 +41,18 @@ These operations are inherently non-deterministic or too expensive for ZK:
 - Running Rhai scripts that interact with external APIs and services
 
 **Witness preparation**
-- The host runs the LLM, prepares the proposed state update, and provides it to the guest as witness data
+- The agent runs the LLM, prepares the proposed state update, and provides it to the guest as witness data
 - The guest verifies that the update is structurally valid and constraint-compliant
+
+**HTTP/A2A server, L1 posting, reconstruction replay**
+- Receiving interactions, posting proofs and calldata on-chain, rebuilding from genesis
 
 ## Proof Flow
 
 ```
 1. Input arrives (interaction, consolidation trigger, etc.)
           │
-2. Host (off-chain) runs LLM inference
+2. strata-agent (off-chain) runs LLM inference
    ├── extracts facts
    ├── generates memory updates
    ├── produces embeddings

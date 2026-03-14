@@ -4,16 +4,22 @@
 
 The MVP proves the core thesis: a persistent, verifiable AI agent that lives on-chain and can be reconstructed by anyone.
 
+### Done
+
+- **Core types** (`strata-core`) — canonical shared types, serialization, validation. No-std compatible.
+- **Proof program** (`strata-proof`) — ZK transition logic: MMR operations, nonce validation, integrity checks. Ready for RISC-V compilation.
+- **Binary vector DB** (`strata-vector-db`) — authenticated append-only binary vector database over Journaled MMR. Hamming distance queries, flat scan, merkle commitment.
+- **ZK proving scaffold** (`strata-jolt`) — Jolt integration proof-of-concept. Guest compiles, proves, and verifies on host.
+
 ### Must Have
 
 These are load-bearing — the thesis doesn't work without them.
 
+- **`strata-agent`** — the single host-side crate. Everything outside the proof boundary lives here: HTTP/A2A server, LLM + embedding clients, witness preparation, Jolt prover invocation, L1 posting (calldata + state roots), and reconstruction replay. There is no separate "host" vs "runtime" — the only meaningful boundary is inside vs outside the ZK proof, and `strata-proof` already owns the inside.
 - **Soul document** — plain text constitution committed at genesis. Hard constraints extracted and enforced in the state transition function.
-- **Binary vector DB** — unified memory system with core/non-core tagging. Hamming distance, flat scan, merkle commitment. Core memories always loaded, non-core retrieved on demand.
 - **Storage** — raw memory content posted as calldata alongside state roots. Verifiable via `content_hash` in each memory entry.
-- **ZK proving via Jolt** — at least one proven state transition demonstrating the full pipeline: input validation, merkle update, constraint checking, new state root.
-- **Reconstruction** — the killer demo. Shut the agent down, delete the server, reconstruct it purely from on-chain state and blobs. Show it remembers everything.
 - **Rollup contract on Base** — post state roots and proofs. Verify proofs on-chain.
+- **Reconstruction** — the killer demo. Shut the agent down, delete the server, reconstruct it purely from on-chain state and blobs. Show it remembers everything.
 
 ### Strong to Have
 

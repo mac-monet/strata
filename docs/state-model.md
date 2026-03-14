@@ -50,10 +50,11 @@ Not everything happens inside the ZK proof. The boundary is:
 - Vector index merkle tree updates (adding/consolidating memories)
 - Structural integrity of all data
 
-**Outside Jolt (trusted to operator):**
+**Outside Jolt (`strata-agent`, trusted to operator):**
 - LLM inference (generating responses, extracting facts, summarizing)
 - Skill execution (Rhai scripts interacting with external world)
 - Embedding generation (producing binary vectors from text)
+- HTTP/A2A server, witness preparation, L1 posting, reconstruction replay
 
 The LLM is the **proposer** — it suggests what to remember and what to do. Jolt is the **verifier** — it proves the bookkeeping was done honestly and the rules were followed. The proof doesn't guarantee the agent is smart, it guarantees the agent is honest.
 

@@ -58,11 +58,11 @@ State changes resulting from A2A interactions go through the normal proven state
 
 A2A is implemented as part of the core agent code in Rust — not as a skill/tool pair. Communication is fundamental infrastructure, not a learned capability. Every Strata agent has A2A built in, ensuring interoperability is reliable and consistent across all agents.
 
-The A2A server runs in the host environment (outside the proof boundary). Incoming messages are parsed by the core Rust code and fed as inputs to proven state transitions. Outgoing messages are actions produced by the transition function.
+The A2A server runs inside `strata-agent` (outside the proof boundary). Incoming messages are parsed and fed as inputs to proven state transitions. Outgoing messages are actions produced by the transition function.
 
 ```
 Incoming A2A message
-    → parsed by core Rust A2A server
+    → parsed by strata-agent's A2A server
     → fed as input to proven state transition
     → agent updates memory, checks constraints, produces response
     → response sent back via A2A
@@ -126,4 +126,4 @@ x402 in both directions makes the agent a self-sustaining economic entity:
 
 ### Core Implementation
 
-Like A2A, x402 is implemented as core Rust infrastructure — not a skill or tool. It's built into the host's HTTP layer so that both outbound requests and inbound service endpoints handle the 402 flow automatically.
+Like A2A, x402 is implemented as core Rust infrastructure — not a skill or tool. It's built into `strata-agent`'s HTTP layer so that both outbound requests and inbound service endpoints handle the 402 flow automatically.

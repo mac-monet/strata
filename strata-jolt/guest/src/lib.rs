@@ -1,5 +1,5 @@
 use strata_core::{CoreState, Nonce};
-use strata_guest::Witness;
+use strata_proof::Witness;
 
 /// Blake3 implementation of GuestHasher using the blake3 crate directly.
 ///
@@ -8,7 +8,7 @@ struct JoltBlake3 {
     hasher: blake3::Hasher,
 }
 
-impl strata_guest::GuestHasher for JoltBlake3 {
+impl strata_proof::GuestHasher for JoltBlake3 {
     fn new() -> Self {
         Self {
             hasher: blake3::Hasher::new(),
@@ -31,6 +31,6 @@ fn verify_transition(
     advice: jolt::UntrustedAdvice<Witness>,
 ) -> CoreState {
     let witness = &*advice;
-    strata_guest::transition::<JoltBlake3>(state, Nonce::new(nonce), witness)
+    strata_proof::transition::<JoltBlake3>(state, Nonce::new(nonce), witness)
         .expect("transition verification failed")
 }

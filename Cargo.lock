@@ -2359,7 +2359,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-guest"
+name = "strata-proof"
 version = "0.1.0"
 dependencies = [
  "commonware-codec",
