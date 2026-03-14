@@ -51,8 +51,7 @@ The guest does NOT verify: whether the embedding is "correct" for the content, w
 
 - Generating responses to interactions
 - Extracting facts and memories from conversations
-- Deciding what to remember (core vs non-core)
-- Producing consolidated summaries for core memories
+- Deciding what to remember
 - Deciding which tool to invoke
 
 The LLM's outputs are packaged as witness data for the guest. The guest trusts the content but verifies the structure.
@@ -83,11 +82,10 @@ The host is responsible for packaging everything the guest needs:
 
 ```rust
 struct Witness {
-    // Memory updates proposed by the LLM
+    // Memory entries to append
     new_entries: Vec<MemoryEntry>,
-    deactivated_ids: Vec<u64>,
 
-    // Merkle proofs for each update
+    // Merkle proofs for the batch
     merkle_proofs: Vec<MerkleProof>,
 
     // The action the agent wants to take

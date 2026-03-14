@@ -14,6 +14,5 @@ pub use primitives::{
 };
 pub use types::{
     CoreState, GenesisConfig, INPUT_SIGNATURE_NAMESPACE, Input, InputPayload, MemoryContent,
-    MemoryContentCfg, MemoryDelta, MemoryDeltaCfg, MemoryEntry, TransitionRecord,
-    TransitionRecordCfg,
+    MemoryContentCfg, MemoryEntry, TransitionRecord, TransitionRecordCfg,
 };

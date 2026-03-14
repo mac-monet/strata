@@ -23,7 +23,7 @@ strata/
 | Crate | Purpose |
 |-------|---------|
 | `jolt-sdk` | ZK proving (guest + host sides) |
-| `commonware-storage` | QMDB (keyless) for vector DB, MMR proof verification for guest |
+| `commonware-storage` | Journaled MMR for vector DB, MMR proof verification for guest |
 | `commonware-codec` | Deterministic serialization for MemoryEntry hashing |
 | `commonware-cryptography` | SHA-256 / Blake3 hashing, signing |
 | `alloy` | Ethereum interaction (posting state roots, contract calls) |
@@ -74,4 +74,4 @@ Steps 1-3 are the critical path. Steps 4-5 can be parallelized. Step 6 depends o
 |------|--------|
 | [Proof Boundary](./proof-boundary.md) | What runs inside Jolt vs outside — the exact boundary between guest and host |
 | [Core Types](./core-types.md) | Shared types — CoreState, MemoryEntry, Input, Witness |
-| [Vector DB](./vector-db.md) | Binary vector DB implementation — QMDB storage, hamming distance, host/guest split |
+| [Vector DB](./vector-db.md) | Binary vector DB implementation — Journaled MMR storage, hamming distance, host/guest split |

@@ -1,0 +1,12 @@
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/spin-23cc807a7294ee17.d: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex/spin.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/once.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/relax.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/rwlock.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libspin-23cc807a7294ee17.rlib: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex/spin.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/once.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/relax.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/rwlock.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libspin-23cc807a7294ee17.rmeta: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex/spin.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/once.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/relax.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/rwlock.rs
+
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/lib.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/mutex/spin.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/once.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/relax.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/spin-0.10.0/src/rwlock.rs:

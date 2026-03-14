@@ -122,15 +122,13 @@ impl FixedSize for CoreState {
     const SIZE: usize = SoulHash::SIZE + VectorRoot::SIZE + Nonce::SIZE;
 }
 
-/// Single memory leaf committed into the vector index.
+/// Single memory leaf committed into the vector index MMR.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MemoryEntry {
     pub id: MemoryId,
     pub embedding: BinaryEmbedding,
     pub content_hash: ContentHash,
-    pub core: bool,
-    pub active: bool,
 }
 
 impl MemoryEntry {
@@ -138,14 +136,11 @@ impl MemoryEntry {
         id: MemoryId,
         embedding: BinaryEmbedding,
         content_hash: ContentHash,
-        core: bool,
     ) -> Self {
         Self {
             id,
             embedding,
             content_hash,
-            core,
-            active: true,
         }
     }
 }
@@ -155,8 +150,6 @@ impl Write for MemoryEntry {
         self.id.write(buf);
         self.embedding.write(buf);
         self.content_hash.write(buf);
-        self.core.write(buf);
-        self.active.write(buf);
     }
 }
 
@@ -168,15 +161,12 @@ impl Read for MemoryEntry {
             id: MemoryId::read(buf)?,
             embedding: BinaryEmbedding::read(buf)?,
             content_hash: ContentHash::read(buf)?,
-            core: bool::read(buf)?,
-            active: bool::read(buf)?,
         })
     }
 }
 
 impl FixedSize for MemoryEntry {
-    const SIZE: usize =
-        MemoryId::SIZE + BinaryEmbedding::SIZE + ContentHash::SIZE + bool::SIZE + bool::SIZE;
+    const SIZE: usize = MemoryId::SIZE + BinaryEmbedding::SIZE + ContentHash::SIZE;
 }
 
 /// Canonical transition intent. MVP only supports memory updates.
@@ -349,138 +339,37 @@ impl Read for MemoryContent {
     }
 }
 
-/// Structured memory diff carried by a transition.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MemoryDelta {
-    pub new_entries: Vec<MemoryEntry>,
-    pub deactivated_ids: Vec<MemoryId>,
-}
-
-impl MemoryDelta {
-    pub fn new(new_entries: Vec<MemoryEntry>, deactivated_ids: Vec<MemoryId>) -> Self {
-        Self {
-            new_entries,
-            deactivated_ids,
-        }
-    }
-
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        let mut previous_new_id = None;
-        for entry in &self.new_entries {
-            if previous_new_id.is_some_and(|last| entry.id <= last) {
-                return Err(ValidationError::NewEntriesOutOfOrder);
-            }
-            if !entry.active {
-                return Err(ValidationError::InactiveNewEntry {
-                    memory_id: entry.id,
-                });
-            }
-            previous_new_id = Some(entry.id);
-        }
-
-        let mut previous_deactivated_id = None;
-        for memory_id in &self.deactivated_ids {
-            if previous_deactivated_id.is_some_and(|last| *memory_id <= last) {
-                return Err(ValidationError::DeactivatedIdsOutOfOrder);
-            }
-            previous_deactivated_id = Some(*memory_id);
-        }
-
-        let mut new_index = 0;
-        let mut deactivated_index = 0;
-        while new_index < self.new_entries.len() && deactivated_index < self.deactivated_ids.len() {
-            let new_id = self.new_entries[new_index].id;
-            let deactivated_id = self.deactivated_ids[deactivated_index];
-
-            match new_id.cmp(&deactivated_id) {
-                core::cmp::Ordering::Less => new_index += 1,
-                core::cmp::Ordering::Greater => deactivated_index += 1,
-                core::cmp::Ordering::Equal => {
-                    return Err(ValidationError::ConflictingMemoryId { memory_id: new_id });
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Write for MemoryDelta {
-    fn write(&self, buf: &mut impl BufMut) {
-        self.new_entries.write(buf);
-        self.deactivated_ids.write(buf);
-    }
-}
-
-impl EncodeSize for MemoryDelta {
-    fn encode_size(&self) -> usize {
-        self.new_entries.encode_size() + self.deactivated_ids.encode_size()
-    }
-}
-
-/// Decode limits for `MemoryDelta`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MemoryDeltaCfg {
-    pub max_new_entries: usize,
-    pub max_deactivated_ids: usize,
-}
-
-impl Default for MemoryDeltaCfg {
-    fn default() -> Self {
-        Self {
-            max_new_entries: u32::MAX as usize,
-            max_deactivated_ids: u32::MAX as usize,
-        }
-    }
-}
-
-impl Read for MemoryDelta {
-    type Cfg = MemoryDeltaCfg;
-
-    fn read_cfg(buf: &mut impl Buf, cfg: &Self::Cfg) -> Result<Self, CodecError> {
-        Ok(Self {
-            new_entries: Vec::<MemoryEntry>::read_cfg(
-                buf,
-                &(RangeCfg::new(0..=cfg.max_new_entries), ()),
-            )?,
-            deactivated_ids: Vec::<MemoryId>::read_cfg(
-                buf,
-                &(RangeCfg::new(0..=cfg.max_deactivated_ids), ()),
-            )?,
-        })
-    }
-}
-
 /// Canonical replay payload for one accepted transition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TransitionRecord {
     pub input: Input,
-    pub delta: MemoryDelta,
+    pub new_entries: Vec<MemoryEntry>,
     pub contents: Vec<MemoryContent>,
 }
 
 impl TransitionRecord {
-    pub fn new(input: Input, delta: MemoryDelta, contents: Vec<MemoryContent>) -> Self {
+    pub fn new(
+        input: Input,
+        new_entries: Vec<MemoryEntry>,
+        contents: Vec<MemoryContent>,
+    ) -> Self {
         Self {
             input,
-            delta,
+            new_entries,
             contents,
         }
     }
 
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.delta.validate()?;
-
-        if self.delta.new_entries.len() != self.contents.len() {
+        if self.new_entries.len() != self.contents.len() {
             return Err(ValidationError::ContentCountMismatch {
-                entries: self.delta.new_entries.len(),
+                entries: self.new_entries.len(),
                 contents: self.contents.len(),
             });
         }
 
-        for (entry, content) in self.delta.new_entries.iter().zip(&self.contents) {
+        for (entry, content) in self.new_entries.iter().zip(&self.contents) {
             if content.memory_id != entry.id {
                 return Err(ValidationError::ContentIdMismatch {
                     expected: entry.id,
@@ -529,21 +418,21 @@ impl TransitionRecord {
 impl Write for TransitionRecord {
     fn write(&self, buf: &mut impl BufMut) {
         self.input.write(buf);
-        self.delta.write(buf);
+        self.new_entries.write(buf);
         self.contents.write(buf);
     }
 }
 
 impl EncodeSize for TransitionRecord {
     fn encode_size(&self) -> usize {
-        self.input.encode_size() + self.delta.encode_size() + self.contents.encode_size()
+        self.input.encode_size() + self.new_entries.encode_size() + self.contents.encode_size()
     }
 }
 
 /// Decode limits for `TransitionRecord`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransitionRecordCfg {
-    pub delta: MemoryDeltaCfg,
+    pub max_new_entries: usize,
     pub max_contents: usize,
     pub content: MemoryContentCfg,
 }
@@ -551,7 +440,7 @@ pub struct TransitionRecordCfg {
 impl TransitionRecordCfg {
     pub fn permissive() -> Self {
         Self {
-            delta: MemoryDeltaCfg::default(),
+            max_new_entries: u32::MAX as usize,
             max_contents: u32::MAX as usize,
             content: MemoryContentCfg::default(),
         }
@@ -564,7 +453,10 @@ impl Read for TransitionRecord {
     fn read_cfg(buf: &mut impl Buf, cfg: &Self::Cfg) -> Result<Self, CodecError> {
         Ok(Self {
             input: Input::read(buf)?,
-            delta: MemoryDelta::read_cfg(buf, &cfg.delta)?,
+            new_entries: Vec::<MemoryEntry>::read_cfg(
+                buf,
+                &(RangeCfg::new(0..=cfg.max_new_entries), ()),
+            )?,
             contents: Vec::<MemoryContent>::read_cfg(
                 buf,
                 &(RangeCfg::new(0..=cfg.max_contents), cfg.content.clone()),
@@ -601,7 +493,6 @@ mod tests {
             memory_id,
             BinaryEmbedding::new([id, id + 1, id + 2, id + 3]),
             content.content_hash(),
-            id == 1,
         );
 
         (entry, content)
@@ -644,7 +535,7 @@ mod tests {
         let (entry_b, content_b) = sample_entry(2, b"beta");
         let record = TransitionRecord::new(
             input,
-            MemoryDelta::new(vec![entry_a, entry_b], vec![MemoryId::new(9)]),
+            vec![entry_a, entry_b],
             vec![content_a, content_b],
         );
 
@@ -662,70 +553,12 @@ mod tests {
         let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
         let (entry, _) = sample_entry(1, b"alpha");
         let wrong_content = MemoryContent::new(MemoryId::new(1), b"not alpha".to_vec());
-        let record = TransitionRecord::new(
-            input,
-            MemoryDelta::new(vec![entry], vec![]),
-            vec![wrong_content],
-        );
+        let record = TransitionRecord::new(input, vec![entry], vec![wrong_content]);
 
         assert_eq!(
             record.validate(),
             Err(ValidationError::ContentHashMismatch {
                 memory_id: MemoryId::new(1)
-            })
-        );
-    }
-
-    #[test]
-    fn transition_record_rejects_out_of_order_ids() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
-        let (entry_a, content_a) = sample_entry(2, b"beta");
-        let (entry_b, content_b) = sample_entry(1, b"alpha");
-        let record = TransitionRecord::new(
-            input,
-            MemoryDelta::new(vec![entry_a, entry_b], vec![]),
-            vec![content_a, content_b],
-        );
-
-        assert_eq!(
-            record.validate(),
-            Err(ValidationError::NewEntriesOutOfOrder)
-        );
-    }
-
-    #[test]
-    fn transition_record_rejects_inactive_new_entries() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
-        let (mut entry, content) = sample_entry(1, b"alpha");
-        entry.active = false;
-        let record =
-            TransitionRecord::new(input, MemoryDelta::new(vec![entry], vec![]), vec![content]);
-
-        assert_eq!(
-            record.validate(),
-            Err(ValidationError::InactiveNewEntry {
-                memory_id: MemoryId::new(1),
-            })
-        );
-    }
-
-    #[test]
-    fn transition_record_rejects_conflicting_ids() {
-        let signer = sample_signer();
-        let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
-        let (entry, content) = sample_entry(1, b"alpha");
-        let record = TransitionRecord::new(
-            input,
-            MemoryDelta::new(vec![entry], vec![MemoryId::new(1)]),
-            vec![content],
-        );
-
-        assert_eq!(
-            record.validate(),
-            Err(ValidationError::ConflictingMemoryId {
-                memory_id: MemoryId::new(1),
             })
         );
     }
@@ -741,8 +574,7 @@ mod tests {
         };
         let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
         let (entry, content) = sample_entry(1, b"alpha");
-        let record =
-            TransitionRecord::new(input, MemoryDelta::new(vec![entry], vec![]), vec![content]);
+        let record = TransitionRecord::new(input, vec![entry], vec![content]);
 
         let next_state = record
             .apply(&initial_state, &operator_key, VectorRoot::new([1u8; 32]))
@@ -769,8 +601,7 @@ mod tests {
         };
         let input = Input::new_signed(Nonce::new(1), InputPayload::MemoryUpdate, &signer);
         let (entry, content) = sample_entry(1, b"alpha");
-        let record =
-            TransitionRecord::new(input, MemoryDelta::new(vec![entry], vec![]), vec![content]);
+        let record = TransitionRecord::new(input, vec![entry], vec![content]);
 
         assert_eq!(
             record.apply(&state, &operator_key, VectorRoot::new([1u8; 32])),

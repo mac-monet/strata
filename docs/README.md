@@ -35,7 +35,7 @@ Most people think of rollups as scaling solutions. Strata reframes them as agent
 │                                                  │
 │  ┌──────┐  ┌──────────────────────────────────┐ │
 │  │ Soul │  │ Binary Vector DB (Hamming/XOR)   │ │
-│  │      │  │ core memory + retrieval index     │ │
+│  │      │  │ append-only retrieval index        │ │
 │  └──────┘  └──────────────────────────────────┘ │
 │                                                  │
 │                                                  │
@@ -66,7 +66,7 @@ The soul document's full text lives in the rollup contract's public storage — 
 |-----------|-------------|-----|
 | [Soul](./soul.md) | The agent's constitution — identity, values, and constraints | Public, legible document |
 | [State Model](./state-model.md) | Core state schema and transition function | What gets proven in ZK |
-| [Vector DB](./vector-db.md) | Binary vector database — unified memory and retrieval | Hamming distance, QMDB, core memory tagging |
+| [Vector DB](./vector-db.md) | Binary vector database — unified memory and retrieval | Hamming distance, Journaled MMR, append-only |
 | [Proving](./proving.md) | ZK proving via Jolt (RISC-V) | What's inside vs outside the proof |
 | [Skills & Tools](./skills.md) | Self-expanding agent capabilities — skills as knowledge, tools as code | Nanoclaw-inspired, outside proof boundary |
 | [On-Chain](./onchain.md) | Identity (ERC-8004), rollup contract, agent communication (A2A) | On-chain surface area |

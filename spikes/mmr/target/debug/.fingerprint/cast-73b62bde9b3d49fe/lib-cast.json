@@ -1,0 +1,1 @@
+{"rustc":2833068300835136146,"features":"[]","declared_features":"[\"std\"]","target":5545552490577062777,"profile":5347358027863023418,"path":8887002683682839786,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug/.fingerprint/cast-73b62bde9b3d49fe/dep-lib-cast","checksum":false}}],"rustflags":["--cap-lints=warn"],"config":2069994364910194474,"compile_kind":0}

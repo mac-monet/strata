@@ -1,0 +1,17 @@
+[package]
+name = "qmdb-spike"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[lints.rust]
+deprecated = "allow"
+
+[dependencies]
+commonware-codec = { path = "/tmp/commonware-monorepo/codec" }
+commonware-cryptography = { path = "/tmp/commonware-monorepo/cryptography" }
+commonware-runtime = { path = "/tmp/commonware-monorepo/runtime" }
+commonware-storage = { path = "/tmp/commonware-monorepo/storage", features = ["std"] }
+commonware-utils = { path = "/tmp/commonware-monorepo/utils" }
+tokio = { version = "1", features = ["full"] }

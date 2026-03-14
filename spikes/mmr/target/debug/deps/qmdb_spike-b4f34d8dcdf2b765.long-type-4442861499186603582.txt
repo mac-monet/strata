@@ -1,0 +1,1 @@
+commonware_storage::mmr::batch::Batch<'_, commonware_cryptography::sha256::Digest, commonware_storage::mmr::journaled::Mmr<commonware_runtime::deterministic::Context, commonware_cryptography::sha256::Digest>, Clean<commonware_cryptography::sha256::Digest>>

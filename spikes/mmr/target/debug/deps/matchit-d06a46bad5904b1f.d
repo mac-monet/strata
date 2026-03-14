@@ -1,0 +1,12 @@
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/matchit-d06a46bad5904b1f.d: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/error.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/escape.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/params.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/router.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/tree.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libmatchit-d06a46bad5904b1f.rlib: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/error.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/escape.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/params.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/router.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/tree.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libmatchit-d06a46bad5904b1f.rmeta: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/error.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/escape.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/params.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/router.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/tree.rs
+
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/lib.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/error.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/escape.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/params.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/router.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/matchit-0.8.4/src/tree.rs:

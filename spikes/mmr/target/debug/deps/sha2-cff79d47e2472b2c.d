@@ -1,0 +1,12 @@
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/sha2-cff79d47e2472b2c.d: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/consts.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256/soft.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512/soft.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libsha2-cff79d47e2472b2c.rlib: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/consts.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256/soft.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512/soft.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libsha2-cff79d47e2472b2c.rmeta: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/consts.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256/soft.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512/soft.rs
+
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/lib.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/consts.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha256/soft.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sha2-0.9.9/src/sha512/soft.rs:

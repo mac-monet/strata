@@ -1,0 +1,14 @@
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/thiserror-e93588dcd16a8442.d: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/thiserror-cd86761ece7c37fa/out/private.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libthiserror-e93588dcd16a8442.rlib: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/thiserror-cd86761ece7c37fa/out/private.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/deps/libthiserror-e93588dcd16a8442.rmeta: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/thiserror-cd86761ece7c37fa/out/private.rs
+
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs:
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs:
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/thiserror-cd86761ece7c37fa/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/thiserror-cd86761ece7c37fa/out

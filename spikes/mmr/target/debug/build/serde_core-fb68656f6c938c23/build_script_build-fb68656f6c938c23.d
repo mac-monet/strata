@@ -1,0 +1,5 @@
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/serde_core-fb68656f6c938c23/build_script_build-fb68656f6c938c23.d: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/build.rs
+
+/Users/indigo/projects/fafo/strata/spikes/qmdb/target/debug/build/serde_core-fb68656f6c938c23/build_script_build-fb68656f6c938c23: /Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/build.rs
+
+/Users/indigo/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_core-1.0.228/build.rs:
