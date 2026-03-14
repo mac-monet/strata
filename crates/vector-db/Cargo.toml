@@ -1,0 +1,14 @@
+[package]
+name = "strata-vector-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-core = { path = "../strata-core" }
+commonware-codec = "2026.3.0"
+commonware-cryptography = "2026.3.0"
+commonware-runtime = "2026.3.0"
+commonware-storage = { version = "2026.3.0", features = ["std"] }
+
+[dev-dependencies]
+commonware-runtime = { version = "2026.3.0" }
