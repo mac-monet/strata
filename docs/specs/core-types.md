@@ -80,6 +80,7 @@ struct Input {
 enum InputPayload {
     MemoryUpdate,
     // Future variants:
+    // ReIndex — re-embed all content with a new embedding model, rebuild MMR
     // Consolidation — merge core memories into fewer entries
     // SoulAmendment { new_soul_hash: [u8; 32] } — change the soul document
     // SkillMutation — add/modify a skill (Rhai AST)
@@ -89,6 +90,8 @@ enum InputPayload {
 - `nonce` — must equal `current_state.nonce + 1`. Guest rejects otherwise.
 - `signature` — ed25519 signature over the serialized payload + nonce. Proves the authorized operator submitted this transition.
 - `payload` — what kind of transition this is. MVP only has `MemoryUpdate`. The actual memory diff and content blobs live outside the `Input`: the replay path uses `TransitionRecord`, while the proving path uses `Witness`.
+
+`ReIndex` re-embeds all existing content with a new embedding model and rebuilds the MMR. Content hashes are unchanged — only embeddings update. The nonce increments normally. Analogous to an L2 VM upgrade: the state is continuous, the proving mechanism changes. Retrieval proofs are scoped to the embedding era they were generated against.
 
 ### Why payload is separate from witness
 

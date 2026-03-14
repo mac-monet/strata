@@ -67,9 +67,9 @@ fn hamming_distance(a: &[u64; 4], b: &[u64; 4]) -> u32 {
 
 ## Hash Function
 
-SHA-256 via `commonware-cryptography::Sha256`. Can swap to Blake3 if benchmarking shows better proving time. Both are available in Commonware.
+Blake3 via `commonware-cryptography::Blake3`. Benchmarked at 4.3x fewer cycles than SHA-256 in the Jolt guest (see `spikes/jolt-merkle/RESULTS.md`), enabling larger batches on lower RAM.
 
-The Journaled MMR uses Commonware's `StandardHasher<Sha256>`, which includes position-aware hashing — leaf digests include their MMR position, preventing second-preimage attacks.
+The Journaled MMR uses Commonware's `StandardHasher<Blake3>`, which includes position-aware hashing — leaf digests include their MMR position, preventing second-preimage attacks.
 
 ## Batching
 
@@ -86,6 +86,18 @@ The Journaled MMR's batch lifecycle maps directly to our proving strategy:
 ```
 
 The agent's live state runs ahead of the proven on-chain state by one batch. Standard rollup behavior.
+
+## Embedding Eras
+
+Embeddings are committed in the MMR leaf, enabling verifiable retrieval. However, embedding models improve over time. A `ReIndex` transition allows the agent to upgrade its embedding model:
+
+1. Re-embed all existing content with the new model
+2. Rebuild the MMR from scratch (same content hashes, new embeddings)
+3. Commit the new root on-chain as a normal state transition
+
+Content hashes survive across eras — they're model-independent. The `vector_index_root` resets to reflect the new index. This is analogous to an L2 upgrade: state is continuous, only the execution environment changes.
+
+Retrieval proofs are era-scoped: a proof generated before a re-index is valid against the old root, not the new one.
 
 ## Guest vs Host
 
