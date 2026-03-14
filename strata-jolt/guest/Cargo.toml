@@ -1,0 +1,13 @@
+[package]
+name = "guest"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+guest = []
+
+[dependencies]
+blake3 = { version = "1.8", default-features = false }
+jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", features = ["guest-std"] }
+strata-guest = { path = "../../crates/strata-guest", default-features = false, features = ["std", "serde"] }
+strata-core = { path = "../../crates/strata-core", features = ["serde"] }
