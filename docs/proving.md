@@ -38,8 +38,8 @@ These operations are inherently non-deterministic or too expensive for ZK. They 
 **Embedding generation**
 - Converting text to binary vectors via an embedding model
 
-**Skill execution**
-- Running Rhai scripts that interact with external APIs and services
+**Codemode execution**
+- Running ephemeral Python scripts via Monty that interact with external APIs and services
 
 **Witness preparation**
 - The agent runs the LLM, prepares the proposed state update, and provides it to the guest as witness data

@@ -37,7 +37,7 @@ Strata agents communicate with other agents using the A2A (Agent2Agent) protocol
 
 Each Strata agent publishes an A2A Agent Card — a JSON document describing:
 - Identity (linked to its 8004 registration)
-- Capabilities and skills
+- Capabilities
 - Communication endpoint
 - Supported interaction modes (polling, streaming, push)
 
@@ -48,7 +48,7 @@ The Agent Card is the agent's public interface for collaboration. Other agents d
 A2A models interactions as tasks:
 
 1. A client agent sends a message (creating or continuing a task)
-2. The Strata agent processes it — retrieves relevant memories, invokes tools, reasons
+2. The Strata agent processes it — retrieves relevant memories, executes codemode scripts, reasons
 3. The agent responds with results (artifacts) and a task status
 4. Multi-turn interactions are supported via context IDs that group related tasks
 
@@ -56,7 +56,7 @@ State changes resulting from A2A interactions go through the normal proven state
 
 ### Core Implementation
 
-A2A is implemented as part of the core agent code in Rust — not as a skill/tool pair. Communication is fundamental infrastructure, not a learned capability. Every Strata agent has A2A built in, ensuring interoperability is reliable and consistent across all agents.
+A2A is implemented as part of the core agent code in Rust. Communication is fundamental infrastructure, not a learned capability. Every Strata agent has A2A built in, ensuring interoperability is reliable and consistent across all agents.
 
 The A2A server runs inside `strata-agent` (outside the proof boundary). Incoming messages are parsed and fed as inputs to proven state transitions. Outgoing messages are actions produced by the transition function.
 
@@ -94,15 +94,15 @@ Strata agents use x402 in both directions — paying for services and getting pa
 
 ### Paying (Outbound)
 
-The agent's tools make HTTP requests via host bindings. When a request returns 402, the host handles the payment flow automatically:
+Codemode scripts make HTTP requests via Monty. When a request returns 402, the host handles the payment flow automatically:
 
-1. Tool makes an HTTP request to a paid API
+1. Script makes an HTTP request to a paid API
 2. Server responds with `402 Payment Required`
 3. The host pays from the rollup contract's funds
 4. The request is retried and succeeds
-5. The result is returned to the tool
+5. The result is returned to the script
 
-The agent doesn't need to "know" about x402 at the skill level. Payment handling is built into the host's HTTP client as core infrastructure. Any tool that makes HTTP requests gets automatic x402 support.
+The agent doesn't need to "know" about x402. Payment handling is built into the host's HTTP client as core infrastructure. Any codemode script that makes HTTP requests gets automatic x402 support.
 
 ### Getting Paid (Inbound)
 
@@ -126,4 +126,4 @@ x402 in both directions makes the agent a self-sustaining economic entity:
 
 ### Core Implementation
 
-Like A2A, x402 is implemented as core Rust infrastructure — not a skill or tool. It's built into `strata-agent`'s HTTP layer so that both outbound requests and inbound service endpoints handle the 402 flow automatically.
+Like A2A, x402 is implemented as core Rust infrastructure. It's built into `strata-agent`'s HTTP layer so that both outbound requests and inbound service endpoints handle the 402 flow automatically.

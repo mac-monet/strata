@@ -30,40 +30,53 @@ Switch from Blake3 to Keccak256 for all commitments.
 - Keccak is fast natively for host-side operations and reconstruction.
 - Blake3 was chosen because it was 4.3x faster than SHA-256 in Jolt's RISC-V. That benchmark is irrelevant in OpenVM where precompile vs software is the dominant factor.
 
-### Tool Execution: Monty (not Rhai)
+### Tool Execution: Bash + Container (minimal primitives)
 
-Use Pydantic's Monty — a minimal Python interpreter written in Rust — instead of Rhai for tool execution.
+MVP uses three tools: `recall`, `remember`, `bash`. Inspired by Pi agent's philosophy — what you leave out matters more than what you put in. The LLM composes primitives to do anything complex.
 
-**Why:**
-- LLMs write excellent Python but mediocre Rhai. The Cloudflare "code mode" pattern (LLM writes code that calls host functions, reducing round trips) works best with a language the LLM knows well.
-- Monty is sandboxed by default — no filesystem, no network, no env vars unless explicitly exposed as host functions.
-- Monty is snapshotable to bytes — execution state can be serialized and stored for reconstruction.
-- Microsecond startup, no container overhead.
-- Rust-native — embeds directly, no FFI.
+**Why bash, not dedicated tools:**
+- Bash is the universal escape hatch. `curl` for HTTP, `cast` for on-chain reads, `python3` for scripting — all available via bash.
+- `recall` and `remember` must be dedicated tools because they touch internal state (vector DB) not exposed via CLI. Everything else goes through bash.
+- Avoids enumerating every possible action as a dedicated tool. The LLM already knows how to compose shell commands.
 
-**Host functions exposed to Monty:**
+**Sandboxing:** The container is the sandbox. The agent runs in a Docker container (or Firecracker microVM). Bash executes inside the container with limited filesystem, network policies, and resource limits. No need for application-level sandboxing.
+
+**Future codemode evolution:**
+- Evaluate whether raw Python in container (`python3 -c '...'` via bash) is sufficient for structured scripting
+- If snapshotability or determinism is needed, consider Monty (pure-Rust Python interpreter) or similar
+- On-chain actions may evolve to Weiroll VM (composable transaction scripts) for batching multiple contract interactions atomically
+
+### Runtime Model
+
+The agent is a rollup. It's a long-running server that processes interactions and periodically commits state roots to L1.
 
 ```
-fetch(url, method, headers, body) -> response    # HTTP requests (A2A, APIs, x402)
-recall(query_embedding) -> memories               # Vector DB hamming distance search
-remember(text) -> memory_id                       # Store new memory entry
-sign(message) -> signature                        # Produce a signature
-call_contract(to, method, args) -> result         # On-chain write (via rollup contract)
-read_contract(to, method, args) -> result         # On-chain read
+┌─ Container (Docker / Firecracker) ─────┐
+│                                         │
+│  strata-agent binary                    │
+│  ├─ axum server (A2A input)             │
+│  ├─ agent loop (LLM + tools)            │
+│  │   ├─ recall  → vector DB             │
+│  │   ├─ remember → vector DB            │
+│  │   └─ bash → sandboxed shell          │
+│  ├─ state transition pipeline           │
+│  └─ L1 poster (periodic commitments)    │
+│                                         │
+│  vector DB state (local filesystem)     │
+└─────────────────────────────────────────┘
+         │
+         ▼ periodic
+    L1 (Base) StrataRollup contract
 ```
 
-**Monty reference:** https://github.com/pydantic/monty
+**One process = one agent = one soul.** Each strata agent is its own container with its own vector DB, soul, and contract.
 
-**Deferred:** For MVP, Monty integration is a strong-to-have. Start with fixed Rust host functions behind standard LLM function calling. Add Monty when the round-trip cost of sequential tool calls becomes a bottleneck.
+**Input sources (MVP):** A2A messages via HTTP.
+**Input sources (future):** On-chain event watching, cron/scheduled tasks, webhooks.
 
-### On-Chain Interactions: Host Functions + alloy
+### On-Chain Interactions
 
-The agent interacts with on-chain contracts through host functions backed by alloy (Rust Ethereum library).
-
-**Why host functions instead of an in-sandbox eth library:**
-- Monty's stdlib is too limited for a full eth library (no classes, limited stdlib)
-- The host builds transactions from structured arguments, which is simpler and more reliable
-- Soul hard constraints are checked before execution (spending limits, allowed contracts)
+For MVP, on-chain reads/writes go through bash via foundry CLI tools (`cast call`, `cast send`). The LLM composes these as needed.
 
 **Security model:**
 - There is no private key risk because the agent IS the rollup contract. Authorization comes from the ZK proof, not a signing key.
@@ -220,10 +233,29 @@ Build incrementally in this order (each sub-step produces something testable):
 - ~50-100 lines
 
 #### 4c: Tool Dispatch
-- Define host functions as an enum or trait: `recall`, `remember`, `fetch`, `sign`, `call_contract`, `read_contract`
-- `recall` queries `VectorDB::query()` with a binary embedding
-- `remember` appends to `VectorDB` via `VectorDB::append()`
-- Match LLM function call responses to host function implementations
+
+**Design philosophy:** Minimal tool set inspired by Pi agent. What you leave out matters more than what you put in. The LLM composes primitives to do anything complex.
+
+**MVP tools (3):**
+- `recall(query)` — search memory. Embeds query, runs `VectorDB::query()` hamming distance search, returns matching entries.
+- `remember(text)` — store memory. Embeds text, appends to `VectorDB` via `VectorDB::append()`, returns memory ID.
+- `bash(command)` — execute a shell command. The escape hatch — covers fetch (curl), on-chain reads (cast call), signing, and anything else the LLM can compose from CLI tools.
+
+`recall` and `remember` must be dedicated tools because they touch internal state (vector DB) not exposed via CLI. Everything else goes through bash.
+
+**Future tool evolution:**
+
+| Tool | Domain | MVP | Future |
+|------|--------|-----|--------|
+| `recall` / `remember` | Memory | dedicated | same |
+| `bash` | Off-chain actions | shell escape hatch | **Monty** (sandboxed Python repl, codemode) |
+| `bash` (via `cast`) | On-chain actions | shell escape hatch | **Weiroll VM** (composable tx scripts) |
+
+The progression: bash → Monty for off-chain, bash → Weiroll for on-chain. Monty and Weiroll both follow the same pattern — the LLM writes a script, the runtime executes it. This avoids enumerating every possible action as a dedicated tool.
+
+**Implementation:**
+- Define a `Tool` enum with three variants: `Recall`, `Remember`, `Bash`
+- Match LLM function call responses to tool implementations
 - Execute and return results to the LLM
 - ~100-200 lines
 
@@ -271,14 +303,20 @@ Build incrementally in this order (each sub-step produces something testable):
 - On 402 response: extract payment details, pay from rollup contract, retry
 - ~50-100 lines
 
-### Step 5: Monty Integration (strong-to-have)
+### Step 5: Codemode — Monty + Weiroll (strong-to-have)
 
-After the core agent works with fixed tool calling:
+After the core agent works with recall + remember + bash:
 
+**5a: Monty (off-chain codemode)**
 1. Add `pydantic-monty` (Rust crate) as a dependency to `strata-agent`.
-2. Register host functions (`fetch`, `recall`, `remember`, `sign`, `call_contract`, `read_contract`) with the Monty runtime.
-3. When the LLM decides to use code mode: it writes a Python script, Monty executes it, host functions are fulfilled by the existing Rust implementations.
+2. Register host functions (`fetch`, `recall`, `remember`, `sign`) with the Monty runtime.
+3. Replace `bash` tool with `codemode` — the LLM writes a Python script, Monty executes it, host functions are fulfilled by existing Rust implementations.
 4. Results feed into the state transition pipeline as before.
+
+**5b: Weiroll VM (on-chain codemode)**
+1. Integrate Weiroll VM for composable on-chain transaction scripting.
+2. The LLM writes a Weiroll script that batches multiple contract interactions into a single atomic transaction.
+3. Replaces bash-via-cast for on-chain actions with a purpose-built, sandboxed execution environment.
 
 ### Step 6: Demo
 
@@ -301,7 +339,7 @@ The MVP demo tells this story:
 | ZK Prover | **OpenVM** (was Jolt) | Production Solidity verifier, 330K gas |
 | Hash Function | **Keccak256** (was Blake3) | OpenVM precompile + EVM opcode |
 | Infrastructure | Commonware primitives | storage, codec, cryptography, runtime |
-| Tool Runtime | **Monty** (was Rhai) | Minimal Python interpreter in Rust, sandboxed |
+| Tool Runtime | **Monty** | Minimal Python interpreter in Rust, sandboxed, snapshotable |
 | On-Chain | alloy + Base L1 | StrataRollup contract, ERC-8004 |
 | Embeddings | Binary vectors, hamming distance | Unchanged |
 | LLM | Claude API (via reqwest) | No framework, direct HTTP |
@@ -312,4 +350,4 @@ The MVP demo tells this story:
 - **x402 inbound** (getting paid) — outbound only for MVP
 - **Memory consolidation** — core memories accumulate without compression
 - **Snapshots** — full replay from genesis is fine at MVP scale
-- **Monty** — start with fixed tool calling, add Monty when round-trip overhead becomes a bottleneck
+- **Codemode (Monty)** — start with bash as escape hatch, add Monty for ephemeral Python codemode when round-trip overhead becomes a bottleneck

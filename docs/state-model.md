@@ -32,7 +32,6 @@ fn transition(state: CoreState, input: Input) -> (CoreState, Option<Action>)
 
 - **Interaction**: a message, query, or event from the outside world
 - **Consolidation**: a periodic compression of core memories in the vector DB (see [vector-db.md](./vector-db.md))
-- **Skill mutation**: the agent creates or modifies a skill (see [skills.md](./skills.md))
 - **Soul amendment**: a modification to the soul document
 
 ### What the Transition Function Does
@@ -52,7 +51,7 @@ Not everything happens inside the ZK proof. The boundary is:
 
 **Outside ZK proof (`strata-agent`, trusted to operator):**
 - LLM inference (generating responses, extracting facts, summarizing)
-- Skill execution (Rhai scripts interacting with external world)
+- Codemode execution (Python scripts via Monty interacting with external world)
 - Embedding generation (producing binary vectors from text)
 - HTTP/A2A server, witness preparation, L1 posting, reconstruction replay
 

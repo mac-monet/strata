@@ -52,7 +52,7 @@ The guest does NOT verify: whether the embedding is "correct" for the content, w
 - Generating responses to interactions
 - Extracting facts and memories from conversations
 - Deciding what to remember
-- Deciding which tool to invoke
+- Deciding what code to write and execute
 
 The LLM's outputs are packaged as witness data for the guest. The guest trusts the content but verifies the structure.
 
@@ -62,9 +62,9 @@ The LLM's outputs are packaged as witness data for the guest. The guest trusts t
 - The resulting vector is provided as witness data
 - The guest commits it to the merkle tree but does not verify it represents the text
 
-### Tool Execution
+### Codemode Execution
 
-- Running tools (Rhai scripts or hardcoded Rust) that interact with external APIs
+- Running ephemeral Python scripts via Monty that interact with external APIs
 - Reading from external data sources
 - Side effects (sending messages, making payments)
 - Results feed back as inputs to the next state transition
@@ -102,6 +102,6 @@ struct Witness {
 | Merkle tree updates | Guest | Deterministic, proves state integrity |
 | LLM inference | Host | Non-deterministic, too expensive for ZK |
 | Embedding generation | Host | Non-deterministic, external model |
-| Tool execution | Host | Side-effectful, environment-dependent |
+| Codemode execution | Host | Side-effectful, environment-dependent |
 | A2A communication | Host | Network I/O, side-effectful |
 | Witness preparation | Host | Orchestration logic |

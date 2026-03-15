@@ -83,7 +83,6 @@ enum InputPayload {
     // ReIndex — re-embed all content with a new embedding model, rebuild MMR
     // Consolidation — merge core memories into fewer entries
     // SoulAmendment { new_soul_hash: [u8; 32] } — change the soul document
-    // SkillMutation — add/modify a skill (Rhai AST)
 }
 ```
 

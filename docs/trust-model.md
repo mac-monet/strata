@@ -51,7 +51,7 @@ Together, they create a complete trust picture: you know the records are real, a
 | LLM reasoning quality | Attestable (replay history) | Agent could reason poorly, but this is visible |
 | Summarization fidelity | Attestable (compare blobs to summaries) | Agent could summarize badly, but this is visible |
 | Value alignment | Attestable (compare soul to behavior) | Agent could contradict its values, but this is visible |
-| Skill behavior | Attestable (read skill ASTs, check results) | Side effects depend on environment |
+| Codemode behavior | Attestable (check inputs and results) | Side effects depend on environment |
 
 ## Reputation as Emergent Property
 

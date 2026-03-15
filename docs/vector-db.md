@@ -29,13 +29,15 @@ The MMR is pure append-only — entries are never modified or removed. The soul 
 
 ### What Gets Stored
 
-Each entry represents a discrete piece of the agent's memory:
+Each entry represents a discrete piece of the agent's memory. There is no type distinction — all memories are structurally identical `MemoryEntry` values in the MMR. The difference is purely semantic, determined by content:
 
 - **Learned facts**: "Commonware provides 17 primitives for building distributed systems including storage, consensus, and p2p."
 - **Interaction summaries**: "On March 5th, Bob asked about binary embeddings for ZK-friendly vector search. I explained hamming distance."
-- **Decision records**: "I chose Rhai over Lua for the skills layer because of AST compilation and Rust-native embedding."
+- **Decision records**: "I chose Monty over Rhai for codemode because LLMs write better Python and Monty is snapshotable."
 - **Relationship knowledge**: "Alice is a Rust developer I've collaborated with on merkle tree implementations."
-- **Skill descriptions**: "I have a skill for fetching GitHub PR data via the API."
+- **Procedural knowledge**: "To fetch GitHub PR data, use the GitHub API at `api.github.com/repos/{owner}/{repo}/pulls/{number}` with a Bearer token."
+
+Procedural knowledge — memories that describe how to accomplish tasks — is what gives the agent its capabilities. When recalled, these memories inform the Python code the LLM writes in codemode (see [codemode.md](./codemode.md)). The agent learns new capabilities by remembering how to do things, not through a separate tool or skill registration system.
 
 Memories accumulate over time. At agent-memory scale (thousands to tens of thousands of entries), this is manageable for flat-scan retrieval.
 

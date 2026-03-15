@@ -35,7 +35,7 @@ Impressive but not required to land the core thesis.
 
 - **x402 inbound** — agent gets paid for its services. Requires pricing logic and 402 response handling on the A2A endpoint.
 - **Full A2A** — streaming, push notifications, full task lifecycle management. Basic request/response is sufficient for MVP.
-- **Skills and tools (Rhai)** — the self-expanding capability layer. For MVP, hardcode a few tools in Rust. Add the Rhai runtime and self-expanding skill system post-hackathon.
+- **Codemode (Monty)** — ephemeral Python script execution via Monty. For MVP, use bash as the escape hatch. Add Monty post-hackathon for sandboxed codemode with LLM-generated Python.
 - **Memory consolidation** — periodic compression of core memories. For MVP, core memories can accumulate without consolidation. Add the consolidation cycle later.
 - **Snapshots** — periodic state checkpoints for faster reconstruction. Full replay from genesis is fine for MVP scale.
 

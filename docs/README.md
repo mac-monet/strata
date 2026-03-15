@@ -9,7 +9,7 @@ The core thesis: **an AI agent _is_ a rollup**. Its state transitions are cognit
 Today, AI agents are ephemeral — they exist only as long as someone runs them. Their memory, identity, and capabilities vanish when the server stops. Strata makes agents permanent.
 
 - **Immortal.** The agent doesn't depend on any single server or operator. As long as the L1 and blobs exist, anyone can bring it back.
-- **Auditable.** The full cognitive history is replayable from genesis. Every memory, every decision, every tool it built — all traceable.
+- **Auditable.** The full cognitive history is replayable from genesis. Every memory, every decision, every action — all traceable.
 - **Forkable.** Snapshot an agent's state and spin up a variant. Same memories, different soul. Agent lineage becomes possible.
 - **Trustworthy.** ZK proofs verify the agent followed its rules. Its soul document lets anyone evaluate its values against its behavior. You don't have to trust the operator.
 - **Private.** The agent can prove it operated honestly without revealing its internal state — useful for agents handling sensitive data.
@@ -72,7 +72,7 @@ The soul document's full text lives in the rollup contract's public storage — 
 | [State Model](./state-model.md) | Core state schema and transition function | What gets proven in ZK |
 | [Vector DB](./vector-db.md) | Binary vector database — unified memory and retrieval | Hamming distance, Journaled MMR, append-only |
 | [Proving](./proving.md) | ZK proving via OpenVM (RISC-V) | What's inside vs outside the proof |
-| [Skills & Tools](./skills.md) | Self-expanding agent capabilities — skills as knowledge, tools as code | Nanoclaw-inspired, outside proof boundary |
+| [Codemode](./codemode.md) | Agent capabilities via ephemeral Python scripts and procedural memory | Monty sandbox, nanoclaw-inspired |
 | [On-Chain](./onchain.md) | Identity (ERC-8004), rollup contract, agent communication (A2A) | On-chain surface area |
 | [Reconstruction](./reconstruction.md) | How anyone can rebuild and verify the agent | The immortality property |
 | [Trust Model](./trust-model.md) | Mathematical + attestable trust | Two-layer verification |
@@ -93,6 +93,6 @@ The soul document's full text lives in the rollup contract's public storage — 
 - **Language:** Rust
 - **ZK Prover:** OpenVM (RISC-V, Halo2 verifier on-chain)
 - **Infrastructure:** Commonware primitives (storage, p2p, codec, cryptography, consensus, runtime)
-- **Scripting:** Rhai (embedded, sandboxed, AST-compiled)
+- **Scripting:** Monty (minimal Python interpreter in Rust, sandboxed, snapshotable)
 - **L1:** Base (ERC-8004 identity)
 - **Embeddings:** Binary vectors, hamming distance
