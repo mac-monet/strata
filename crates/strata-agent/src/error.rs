@@ -13,4 +13,7 @@ pub enum AgentError {
 
     #[error("embedding error: {0}")]
     Embed(String),
+
+    #[error("tool error: {0}")]
+    Tool(String),
 }

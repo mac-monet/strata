@@ -3836,10 +3836,12 @@ version = "0.1.0"
 name = "strata-agent"
 version = "0.1.0"
 dependencies = [
+ "commonware-runtime",
  "reqwest",
  "serde",
  "serde_json",
  "strata-core",
+ "strata-vector-db",
  "thiserror 2.0.18",
  "tokenizers",
  "tokio",
