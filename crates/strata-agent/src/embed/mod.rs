@@ -2,7 +2,7 @@
 //!
 //! Two backends:
 //! - `ApiEmbedder` — calls an OpenAI-compatible embedding API over HTTP
-//! - `LocalEmbedder` — runs a model locally via fastembed (feature `local-embed`)
+//! - `LocalEmbedder` — runs a model locally via tract (feature `local-embed`)
 //!
 //! Both produce float vectors that are binarized into `BinaryEmbedding`.
 
