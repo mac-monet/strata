@@ -58,7 +58,7 @@ mod tests {
     fn sample_entry(id: u64, text: &[u8]) -> MemoryEntry {
         MemoryEntry::new(
             MemoryId::new(id),
-            BinaryEmbedding::new([id, id + 1, id + 2, id + 3]),
+            BinaryEmbedding::test_from_id(id),
             ContentHash::digest(text),
         )
     }

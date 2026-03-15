@@ -28,7 +28,7 @@ fn make_config(suffix: &str, context: &deterministic::Context) -> journaled::Con
 fn make_entry(id: u64, text: &[u8]) -> MemoryEntry {
     MemoryEntry::new(
         MemoryId::new(id),
-        BinaryEmbedding::new([id, id + 1, id + 2, id + 3]),
+        BinaryEmbedding::test_from_id(id),
         ContentHash::digest(text),
     )
 }
@@ -106,8 +106,8 @@ fn query_returns_correct_top_k() {
         // Entry 2: embedding is [2, 3, 4, 5]
         db.append(make_entry(2, b"c")).await.unwrap();
 
-        // Query with embedding [0, 1, 2, 3] — should match entry 0 exactly
-        let query = BinaryEmbedding::new([0, 1, 2, 3]);
+        // Query with test_from_id(0) — should match entry 0 exactly
+        let query = BinaryEmbedding::test_from_id(0);
         let results = db.query(&query, 2);
 
         assert_eq!(results.len(), 2);
@@ -125,7 +125,7 @@ fn query_k_larger_than_len() {
         let mut db = VectorDB::new(context, config).await.unwrap();
         db.append(make_entry(0, b"only one")).await.unwrap();
 
-        let query = BinaryEmbedding::new([0, 0, 0, 0]);
+        let query = BinaryEmbedding::default();
         let results = db.query(&query, 100);
         assert_eq!(results.len(), 1);
 

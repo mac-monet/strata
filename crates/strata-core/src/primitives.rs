@@ -5,8 +5,8 @@ const HASH_BYTES: usize = 32;
 const PUBLIC_KEY_BYTES: usize = 32;
 const SIGNATURE_BYTES: usize = 64;
 
-/// Number of `u64` words in a fixed-width binary embedding.
-pub const EMBEDDING_WORDS: usize = 4;
+/// Number of `u64` words in a fixed-width binary embedding (1024 bits).
+pub const EMBEDDING_WORDS: usize = 16;
 
 macro_rules! impl_fixed_bytes_type {
     ($name:ident, $len:expr) => {
@@ -257,6 +257,18 @@ impl BinaryEmbedding {
 
     pub const fn as_words(&self) -> &[u64; EMBEDDING_WORDS] {
         &self.0
+    }
+
+    /// Create a deterministic test embedding from a single id.
+    /// Fills all words with sequential values derived from the id.
+    pub const fn test_from_id(id: u64) -> Self {
+        let mut words = [0u64; EMBEDDING_WORDS];
+        let mut i = 0;
+        while i < EMBEDDING_WORDS {
+            words[i] = id + i as u64;
+            i += 1;
+        }
+        Self(words)
     }
 }
 

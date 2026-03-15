@@ -12,10 +12,11 @@ use crate::error::AgentError;
 const OPENAI_EMBED_URL: &str = "https://api.openai.com/v1/embeddings";
 const DEFAULT_MODEL: &str = "text-embedding-3-small";
 
-/// Number of float dimensions expected from the embedding model.
-/// `text-embedding-3-small` returns 1536 dims; we only use the first 256
-/// (one per bit in our [u64; 4] binary embedding).
-const BINARY_DIMS: usize = EMBEDDING_WORDS * 64; // 256
+/// Maximum number of float dimensions to binarize (one per bit).
+/// With EMBEDDING_WORDS=16, this is 1024 bits — covers all common models.
+/// Models with fewer dimensions (e.g. 768) use only the first N bits;
+/// remaining bits stay zero, which is harmless for hamming distance.
+const BINARY_DIMS: usize = EMBEDDING_WORDS * 64; // 1024
 
 /// Client for generating binary embeddings from text.
 pub struct EmbedClient {
@@ -77,10 +78,11 @@ impl EmbedClient {
     }
 }
 
-/// Convert a float embedding to a 256-bit binary embedding.
+/// Convert a float embedding to a 1024-bit binary embedding.
 ///
-/// Strategy: threshold each of the first 256 dimensions at the median value.
-/// Dimensions above median → 1, at or below → 0.
+/// Strategy: threshold each of the first 1024 dimensions at the median value.
+/// Dimensions above median → 1, at or below → 0. Models with fewer dimensions
+/// leave upper bits as zero.
 pub fn binarize(floats: &[f32]) -> BinaryEmbedding {
     let dims = floats.len().min(BINARY_DIMS);
     if dims == 0 {

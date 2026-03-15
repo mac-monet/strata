@@ -34,9 +34,11 @@ pub fn top_k(index: &[MemoryEntry], query: &BinaryEmbedding, k: usize) -> Vec<Qu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strata_core::{ContentHash, MemoryId};
+    use strata_core::{ContentHash, EMBEDDING_WORDS, MemoryId};
 
-    fn make_entry(id: u64, words: [u64; 4]) -> MemoryEntry {
+    fn make_entry_with_first_word(id: u64, first_word: u64) -> MemoryEntry {
+        let mut words = [0u64; EMBEDDING_WORDS];
+        words[0] = first_word;
         MemoryEntry::new(
             MemoryId::new(id),
             BinaryEmbedding::new(words),
@@ -46,32 +48,34 @@ mod tests {
 
     #[test]
     fn hamming_distance_identical() {
-        let a = BinaryEmbedding::new([0, 0, 0, 0]);
+        let a = BinaryEmbedding::default();
         assert_eq!(hamming_distance(&a, &a), 0);
     }
 
     #[test]
     fn hamming_distance_all_different() {
-        let a = BinaryEmbedding::new([0, 0, 0, 0]);
-        let b = BinaryEmbedding::new([u64::MAX, u64::MAX, u64::MAX, u64::MAX]);
-        assert_eq!(hamming_distance(&a, &b), 256);
+        let a = BinaryEmbedding::default();
+        let b = BinaryEmbedding::new([u64::MAX; EMBEDDING_WORDS]);
+        assert_eq!(hamming_distance(&a, &b), 1024);
     }
 
     #[test]
     fn hamming_distance_single_bit() {
-        let a = BinaryEmbedding::new([0, 0, 0, 0]);
-        let b = BinaryEmbedding::new([1, 0, 0, 0]);
+        let a = BinaryEmbedding::default();
+        let mut words = [0u64; EMBEDDING_WORDS];
+        words[0] = 1;
+        let b = BinaryEmbedding::new(words);
         assert_eq!(hamming_distance(&a, &b), 1);
     }
 
     #[test]
     fn top_k_returns_nearest() {
         let entries = vec![
-            make_entry(0, [0xFF, 0, 0, 0]),
-            make_entry(1, [0, 0, 0, 0]),
-            make_entry(2, [1, 0, 0, 0]),
+            make_entry_with_first_word(0, 0xFF),
+            make_entry_with_first_word(1, 0),
+            make_entry_with_first_word(2, 1),
         ];
-        let query = BinaryEmbedding::new([0, 0, 0, 0]);
+        let query = BinaryEmbedding::default();
         let results = top_k(&entries, &query, 2);
 
         assert_eq!(results.len(), 2);
@@ -83,8 +87,8 @@ mod tests {
 
     #[test]
     fn top_k_larger_than_index() {
-        let entries = vec![make_entry(0, [0, 0, 0, 0])];
-        let query = BinaryEmbedding::new([0, 0, 0, 0]);
+        let entries = vec![make_entry_with_first_word(0, 0)];
+        let query = BinaryEmbedding::default();
         let results = top_k(&entries, &query, 10);
         assert_eq!(results.len(), 1);
     }

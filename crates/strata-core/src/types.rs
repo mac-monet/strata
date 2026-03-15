@@ -445,7 +445,7 @@ mod tests {
         let content = MemoryContent::new(memory_id, text.to_vec());
         let entry = MemoryEntry::new(
             memory_id,
-            BinaryEmbedding::new([id, id + 1, id + 2, id + 3]),
+            BinaryEmbedding::test_from_id(id),
             content.content_hash(),
         );
 

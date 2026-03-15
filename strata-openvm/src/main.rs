@@ -28,7 +28,7 @@ fn main() {
 
     let entries = vec![MemoryEntry::new(
         MemoryId::new(0),
-        BinaryEmbedding::new([1, 2, 3, 4]),
+        BinaryEmbedding::test_from_id(1),
         ContentHash::digest(b"hello world"),
     )];
 
