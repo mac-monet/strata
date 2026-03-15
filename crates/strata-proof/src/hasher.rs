@@ -1,39 +1,32 @@
 /// Minimal hash abstraction for guest transition logic.
 ///
 /// Avoids `commonware_cryptography::Hasher`'s `Default + Clone + Send + Sync`
-/// bounds that may not hold for Jolt inline hash implementations.
+/// bounds that may not hold for ZK VM inline hash implementations.
 pub trait GuestHasher {
     fn new() -> Self;
     fn update(&mut self, data: &[u8]);
     fn finalize(&mut self) -> [u8; 32];
 }
 
-/// Blake3 implementation of [`GuestHasher`] wrapping `commonware_cryptography::blake3::Blake3`.
-#[cfg(feature = "blake3")]
-pub struct Blake3Hasher {
-    inner: commonware_cryptography::blake3::Blake3,
+/// Keccak256 implementation of [`GuestHasher`] wrapping `alloy_primitives::Keccak256`.
+pub struct Keccak256Hasher {
+    inner: alloy_primitives::Keccak256,
 }
 
-#[cfg(feature = "blake3")]
-impl GuestHasher for Blake3Hasher {
+impl GuestHasher for Keccak256Hasher {
     fn new() -> Self {
-        use commonware_cryptography::Hasher as _;
         Self {
-            inner: commonware_cryptography::blake3::Blake3::new(),
+            inner: alloy_primitives::Keccak256::new(),
         }
     }
 
     fn update(&mut self, data: &[u8]) {
-        use commonware_cryptography::Hasher as _;
         self.inner.update(data);
     }
 
     fn finalize(&mut self) -> [u8; 32] {
-        use commonware_cryptography::Hasher as _;
-        let digest = self.inner.finalize();
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(digest.as_ref());
-        bytes
+        let hasher = core::mem::replace(&mut self.inner, alloy_primitives::Keccak256::new());
+        hasher.finalize().into()
     }
 }
 

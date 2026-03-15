@@ -4,14 +4,15 @@
 //! `simulate_appends`, then asserts both produce identical roots.
 
 use commonware_codec::Encode;
-use commonware_cryptography::{Hasher as _, blake3::Blake3};
+use commonware_cryptography::Hasher as _;
 use commonware_runtime::{Metrics, Runner as _, deterministic};
 use commonware_storage::mmr::{StandardHasher, journaled};
 use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
 use strata_core::{
     BinaryEmbedding, ContentHash, CoreState, MemoryEntry, MemoryId, Nonce, SoulHash, VectorRoot,
 };
-use strata_proof::{Blake3Hasher, Witness, compute_root, simulate_appends, transition};
+use strata_proof::{Keccak256Hasher, Witness, compute_root, simulate_appends, transition};
+use strata_vector_db::keccak::{Digest, Keccak256};
 
 fn make_config(suffix: &str, context: &deterministic::Context) -> journaled::Config {
     let page_size = NonZeroU16::new(4096).unwrap();
@@ -39,9 +40,9 @@ fn make_entry(id: u64, text: &[u8]) -> MemoryEntry {
     )
 }
 
-type Blake3Digest = <Blake3 as commonware_cryptography::Hasher>::Digest;
+type KeccakDigest = <Keccak256 as commonware_cryptography::Hasher>::Digest;
 
-fn digest_to_bytes(d: &Blake3Digest) -> [u8; 32] {
+fn digest_to_bytes(d: &KeccakDigest) -> [u8; 32] {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(d.as_ref());
     bytes
@@ -52,14 +53,14 @@ fn digest_to_bytes(d: &Blake3Digest) -> [u8; 32] {
 fn empty_root_matches_standard_hasher() {
     deterministic::Runner::default().start(|context| async move {
         let config = make_config("empty-root", &context);
-        let mut hasher = StandardHasher::<Blake3>::new();
-        let mmr: journaled::Mmr<_, Blake3Digest> =
+        let mut hasher = StandardHasher::<Keccak256>::new();
+        let mmr: journaled::Mmr<_, KeccakDigest> =
             journaled::Mmr::init(context, &mut hasher, config)
                 .await
                 .unwrap();
 
         let real_root = digest_to_bytes(&mmr.root());
-        let guest_root = compute_root::<Blake3Hasher>(0, &[]);
+        let guest_root = compute_root::<Keccak256Hasher>(0, &[]);
 
         assert_eq!(
             real_root, guest_root,
@@ -75,8 +76,8 @@ fn empty_root_matches_standard_hasher() {
 fn single_leaf_matches() {
     deterministic::Runner::default().start(|context| async move {
         let config = make_config("single", &context);
-        let mut hasher = StandardHasher::<Blake3>::new();
-        let mut mmr: journaled::Mmr<_, Blake3Digest> =
+        let mut hasher = StandardHasher::<Keccak256>::new();
+        let mut mmr: journaled::Mmr<_, KeccakDigest> =
             journaled::Mmr::init(context, &mut hasher, config)
                 .await
                 .unwrap();
@@ -96,8 +97,8 @@ fn single_leaf_matches() {
         // Guest simulation
         let mut peaks = Vec::new();
         let mut count = 0u64;
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &[leaf_bytes]);
-        let guest_root = compute_root::<Blake3Hasher>(count, &peaks);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &[leaf_bytes]);
+        let guest_root = compute_root::<Keccak256Hasher>(count, &peaks);
 
         assert_eq!(real_root, guest_root, "single-leaf roots must match");
 
@@ -110,8 +111,8 @@ fn single_leaf_matches() {
 fn multi_leaf_matches() {
     deterministic::Runner::default().start(|context| async move {
         let config = make_config("multi", &context);
-        let mut hasher = StandardHasher::<Blake3>::new();
-        let mut mmr: journaled::Mmr<_, Blake3Digest> =
+        let mut hasher = StandardHasher::<Keccak256>::new();
+        let mut mmr: journaled::Mmr<_, KeccakDigest> =
             journaled::Mmr::init(context, &mut hasher, config)
                 .await
                 .unwrap();
@@ -135,8 +136,8 @@ fn multi_leaf_matches() {
         // Guest simulation from scratch
         let mut peaks = Vec::new();
         let mut count = 0u64;
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &entries_bytes);
-        let guest_root = compute_root::<Blake3Hasher>(count, &peaks);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &entries_bytes);
+        let guest_root = compute_root::<Keccak256Hasher>(count, &peaks);
 
         assert_eq!(
             real_root, guest_root,
@@ -152,8 +153,8 @@ fn multi_leaf_matches() {
 fn incremental_append_matches() {
     deterministic::Runner::default().start(|context| async move {
         let config = make_config("incremental", &context);
-        let mut hasher = StandardHasher::<Blake3>::new();
-        let mut mmr: journaled::Mmr<_, Blake3Digest> =
+        let mut hasher = StandardHasher::<Keccak256>::new();
+        let mut mmr: journaled::Mmr<_, KeccakDigest> =
             journaled::Mmr::init(context, &mut hasher, config)
                 .await
                 .unwrap();
@@ -193,12 +194,12 @@ fn incremental_append_matches() {
         // Guest: simulate batch 1
         let mut peaks = Vec::new();
         let mut count = 0u64;
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &batch1_bytes);
-        let mid_root_guest = compute_root::<Blake3Hasher>(count, &peaks);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &batch1_bytes);
+        let mid_root_guest = compute_root::<Keccak256Hasher>(count, &peaks);
         assert_eq!(mid_root_real, mid_root_guest, "mid roots must match");
 
         // Guest: verify_append with batch 2
-        let final_root_guest = strata_proof::verify_append::<Blake3Hasher>(
+        let final_root_guest = strata_proof::verify_append::<Keccak256Hasher>(
             &peaks,
             count,
             &mid_root_guest,
@@ -219,15 +220,15 @@ fn incremental_append_matches() {
 fn full_transition_matches_real_mmr() {
     deterministic::Runner::default().start(|context| async move {
         let config = make_config("transition", &context);
-        let mut hasher = StandardHasher::<Blake3>::new();
-        let mut mmr: journaled::Mmr<_, Blake3Digest> =
+        let mut hasher = StandardHasher::<Keccak256>::new();
+        let mut mmr: journaled::Mmr<_, KeccakDigest> =
             journaled::Mmr::init(context, &mut hasher, config)
                 .await
                 .unwrap();
 
         // Genesis: empty MMR root
         let genesis_root = digest_to_bytes(&mmr.root());
-        let guest_genesis = compute_root::<Blake3Hasher>(0, &[]);
+        let guest_genesis = compute_root::<Keccak256Hasher>(0, &[]);
         assert_eq!(genesis_root, guest_genesis);
 
         let state = CoreState {
@@ -260,7 +261,7 @@ fn full_transition_matches_real_mmr() {
         };
 
         let new_state =
-            transition::<Blake3Hasher>(state, Nonce::new(1), &witness).unwrap();
+            transition::<Keccak256Hasher>(state, Nonce::new(1), &witness).unwrap();
 
         assert_eq!(
             new_state.vector_index_root.as_bytes(),

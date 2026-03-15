@@ -8,7 +8,7 @@ Technical specifications for building Strata.
 strata/
 ├── crates/
 │   ├── core/          # shared types — CoreState, MemoryEntry, Input, Witness, serialization
-│   ├── guest/         # Jolt guest program — state transition function (runs in RISC-V)
+│   ├── guest/         # ZK guest program — state transition function (runs in RISC-V)
 │   ├── vector-db/     # binary vector DB — hamming distance, flat scan, merkle commitment
 │   ├── host/          # orchestration — LLM calls, embedding, witness prep, proving
 │   └── agent/         # runtime — HTTP server, A2A endpoint, main binary
@@ -22,10 +22,10 @@ strata/
 
 | Crate | Purpose |
 |-------|---------|
-| `jolt-sdk` | ZK proving (guest + host sides) |
+| `openvm` | ZK proving (guest + host sides) |
 | `commonware-storage` | Journaled MMR for vector DB, MMR proof verification for guest |
 | `commonware-codec` | Deterministic serialization for MemoryEntry hashing |
-| `commonware-cryptography` | SHA-256 / Blake3 hashing, signing |
+| `commonware-cryptography` | Keccak256 hashing (via adapter), signing |
 | `alloy` | Ethereum interaction (posting state roots, contract calls) |
 | `axum` | HTTP server for A2A endpoint and agent API |
 | `reqwest` | HTTP client for LLM, embedding, x402 |
@@ -72,6 +72,6 @@ Steps 1-3 are the critical path. Steps 4-5 can be parallelized. Step 6 depends o
 
 | Spec | Covers |
 |------|--------|
-| [Proof Boundary](./proof-boundary.md) | What runs inside Jolt vs outside — the exact boundary between guest and host |
+| [Proof Boundary](./proof-boundary.md) | What runs inside the ZK guest vs outside — the exact boundary between guest and host |
 | [Core Types](./core-types.md) | Shared types — CoreState, MemoryEntry, Input, Witness |
 | [Vector DB](./vector-db.md) | Binary vector DB implementation — Journaled MMR storage, hamming distance, host/guest split |

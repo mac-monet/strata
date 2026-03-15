@@ -1,12 +1,12 @@
 # Proof Boundary
 
-This document defines exactly what runs inside the Jolt guest program (proven in ZK) and what runs in the host (trusted to the operator).
+This document defines exactly what runs inside the ZK guest program (proven via OpenVM) and what runs in the host (trusted to the operator).
 
 ## Guiding Principle
 
 Prove the **bookkeeping**, not the **thinking**. The ZK proof guarantees the agent's state was updated correctly and its rules were followed. It does not guarantee the agent is intelligent or that its decisions are good.
 
-The LLM is the **proposer** — it suggests state updates. Jolt is the **verifier** — it checks that those updates are structurally valid and constraint-compliant.
+The LLM is the **proposer** — it suggests state updates. The ZK prover is the **verifier** — it checks that those updates are structurally valid and constraint-compliant.
 
 ## Inside the Guest (Proven)
 

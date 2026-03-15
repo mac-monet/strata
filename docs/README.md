@@ -2,7 +2,7 @@
 
 Strata is a custom rollup architecture for persistent, verifiable and trustless AI agents. An agent's entire cognitive state — its identity, memory, capabilities, and history — lives on-chain, making it auditable, forkable, and immortal.
 
-The core thesis: **an AI agent _is_ a rollup**. Its state transitions are cognitive operations (perceiving, remembering, deciding, acting), and those transitions are proven in zero knowledge via Jolt. Anyone can reconstruct and verify the agent by replaying its on-chain data from genesis.
+The core thesis: **an AI agent _is_ a rollup**. Its state transitions are cognitive operations (perceiving, remembering, deciding, acting), and those transitions are proven in zero knowledge via OpenVM. Anyone can reconstruct and verify the agent by replaying its on-chain data from genesis.
 
 ## Why This Matters
 
@@ -42,7 +42,7 @@ Most people think of rollups as scaling solutions. Strata reframes them as agent
 │  └──────┘  └──────────────────────────────────┘ │
 │                                                  │
 │  ┌────────────────────────────────────────────┐  │
-│  │     strata-proof + Jolt (RISC-V / ZK)     │  │
+│  │    strata-proof + OpenVM (RISC-V / ZK)    │  │
 │  │     state transitions, constraints         │  │
 │  └────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
@@ -71,7 +71,7 @@ The soul document's full text lives in the rollup contract's public storage — 
 | [Soul](./soul.md) | The agent's constitution — identity, values, and constraints | Public, legible document |
 | [State Model](./state-model.md) | Core state schema and transition function | What gets proven in ZK |
 | [Vector DB](./vector-db.md) | Binary vector database — unified memory and retrieval | Hamming distance, Journaled MMR, append-only |
-| [Proving](./proving.md) | ZK proving via Jolt (RISC-V) | What's inside vs outside the proof |
+| [Proving](./proving.md) | ZK proving via OpenVM (RISC-V) | What's inside vs outside the proof |
 | [Skills & Tools](./skills.md) | Self-expanding agent capabilities — skills as knowledge, tools as code | Nanoclaw-inspired, outside proof boundary |
 | [On-Chain](./onchain.md) | Identity (ERC-8004), rollup contract, agent communication (A2A) | On-chain surface area |
 | [Reconstruction](./reconstruction.md) | How anyone can rebuild and verify the agent | The immortality property |
@@ -85,13 +85,13 @@ The soul document's full text lives in the rollup contract's public storage — 
 | `strata-core` | Canonical shared types, serialization, validation (no_std) | Done |
 | `strata-proof` | ZK transition logic — MMR ops, nonce validation, integrity checks | Done |
 | `strata-vector-db` | Binary vector DB over Journaled MMR — hamming queries, merkle commitment | Done |
-| `strata-jolt` | Jolt proving scaffold — guest compilation, proving, verification | Done (PoC) |
+| `strata-openvm` | OpenVM proving scaffold — guest compilation, proving, verification | Done (scaffold) |
 | `strata-agent` | Host runtime — HTTP/A2A, LLM, embeddings, prover, L1, reconstruction | Not yet built |
 
 ## Stack
 
 - **Language:** Rust
-- **ZK Prover:** Jolt (RISC-V)
+- **ZK Prover:** OpenVM (RISC-V, Halo2 verifier on-chain)
 - **Infrastructure:** Commonware primitives (storage, p2p, codec, cryptography, consensus, runtime)
 - **Scripting:** Rhai (embedded, sandboxed, AST-compiled)
 - **L1:** Base (ERC-8004 identity)

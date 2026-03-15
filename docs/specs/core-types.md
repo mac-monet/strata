@@ -1,6 +1,6 @@
 # Core Types Spec
 
-Shared types used by both the Jolt guest and the host. Everything in `strata-core` must be `no_std` compatible (with `alloc` where needed).
+Shared types used by both the ZK guest and the host. Everything in `strata-core` must be `no_std` compatible (with `alloc` where needed).
 
 Serialization is handled via `commonware-codec` for deterministic hashing. JSON serialization (`serde`) is added for host-side convenience but not required in the guest.
 
@@ -16,7 +16,7 @@ struct CoreState {
 }
 ```
 
-- `soul_hash` — SHA-256 hash of the soul document text. The full text lives in the rollup contract's public storage. On startup/reconstruction, the host reads the text from the contract and verifies it against this hash.
+- `soul_hash` — Keccak256 hash of the soul document text. The full text lives in the rollup contract's public storage. On startup/reconstruction, the host reads the text from the contract and verifies it against this hash.
 - `vector_index_root` — MMR root over all `MemoryEntry` values in the vector DB (from Journaled MMR).
 - `nonce` — monotonically increasing counter. Incremented on every proven state transition.
 
@@ -32,7 +32,7 @@ struct GenesisConfig {
 }
 ```
 
-- `soul_hash` — SHA-256 hash of the soul document text.
+- `soul_hash` — Keccak256 hash of the soul document text.
 - `operator_key` — ed25519 public key authorized to sign inputs.
 - `initial_vector_index_root` — starting MMR root (typically the empty tree root).
 
@@ -60,7 +60,7 @@ struct MemoryEntry {
 
 - `id` — unique, monotonically increasing. Assigned by the host on creation.
 - `embedding` — 256-bit binary vector. Generated off-chain by an embedding model.
-- `content_hash` — SHA-256 hash of the full text content. Content is posted as calldata.
+- `content_hash` — Keccak256 hash of the full text content. Content is posted as calldata.
 
 Fixed size: 8 + 32 + 32 = 72 bytes per entry.
 
@@ -142,7 +142,7 @@ struct MemoryContent {
 }
 ```
 
-Each new entry must have exactly one corresponding `MemoryContent`. The content's SHA-256 hash must match the entry's `content_hash`.
+Each new entry must have exactly one corresponding `MemoryContent`. The content's Keccak256 hash must match the entry's `content_hash`.
 
 ### ValidationError
 

@@ -1,12 +1,13 @@
-# ZK Proving via Jolt
+# ZK Proving via OpenVM
 
-Strata uses Jolt, a RISC-V based ZK prover, to generate proofs of correct state transitions. The state transition function is written in Rust, compiled to RISC-V, and proven via Jolt. This means the agent's cognitive bookkeeping is mathematically verified without requiring anyone to trust the operator.
+Strata uses OpenVM, a RISC-V based ZK prover, to generate proofs of correct state transitions. The state transition function is written in Rust, compiled to RISC-V, and proven via OpenVM with an on-chain Halo2 verifier (~330K gas). This means the agent's cognitive bookkeeping is mathematically verified without requiring anyone to trust the operator.
 
-## Why Jolt
+## Why OpenVM
 
 - **Write Rust, prove RISC-V**: no circuit DSLs, no custom constraint systems. The state transition function is normal Rust code.
 - **General purpose**: RISC-V is a full instruction set. Any computation expressible in Rust can be proven.
-- **Performance**: Jolt is designed for fast proving with minimal overhead.
+- **Native precompiles**: Keccak256 runs as an optimized circuit (not software emulation), matching the EVM's native hash function.
+- **Production verifier**: Audited Solidity verifier (Halo2) at ~330K gas per proof on-chain.
 
 ## The Proof Boundary
 
@@ -14,7 +15,7 @@ The most important design decision is what goes inside the proof vs what stays o
 
 ### Inside the Proof (Guest Program)
 
-The Jolt guest program handles all deterministic state operations:
+The OpenVM guest program handles all deterministic state operations:
 
 **State validation**
 - Input is well-formed and correctly signed
@@ -58,7 +59,7 @@ These operations are inherently non-deterministic or too expensive for ZK. They 
    ├── produces embeddings
    └── prepares witness data
           │
-3. Guest program (in Jolt) receives:
+3. Guest program (in OpenVM) receives:
    ├── current state root
    ├── input
    └── witness data (proposed updates from LLM)
@@ -68,7 +69,7 @@ These operations are inherently non-deterministic or too expensive for ZK. They 
    ├── merkle updates (vector index)
    └── outputs new state root
           │
-5. Jolt generates proof of correct execution
+5. OpenVM generates proof of correct execution
           │
 6. Proof + new state root posted to L1
 ```

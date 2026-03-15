@@ -1,10 +1,11 @@
 use commonware_codec::Encode;
-use commonware_cryptography::{Hasher as _, blake3::Blake3};
+use commonware_cryptography::Hasher as _;
 use commonware_runtime::{Metrics, Runner as _, deterministic};
 use commonware_storage::mmr::{Location, StandardHasher, journaled};
 use std::num::{NonZeroU64, NonZeroU16, NonZeroUsize};
 use strata_core::{BinaryEmbedding, ContentHash, MemoryEntry, MemoryId, VectorRoot};
 use strata_vector_db::VectorDB;
+use strata_vector_db::keccak::{Digest, Keccak256};
 
 fn make_config(suffix: &str, context: &deterministic::Context) -> journaled::Config {
     let page_size = NonZeroU16::new(4096).unwrap();
@@ -171,17 +172,14 @@ fn witness_generates_valid_proof() {
         assert_eq!(witness.start_location, Location::new(2));
 
         // Verify the proof against the current root
-        let mut hasher = StandardHasher::<Blake3>::new();
+        let mut hasher = StandardHasher::<Keccak256>::new();
         let elements: Vec<Vec<u8>> = witness
             .new_entries
             .iter()
             .map(|e| e.encode().to_vec())
             .collect();
         let element_refs: Vec<&[u8]> = elements.iter().map(|e| e.as_slice()).collect();
-        let root_digest = {
-            let root_bytes = witness.new_root.as_bytes();
-            commonware_cryptography::blake3::Digest(*root_bytes)
-        };
+        let root_digest = Digest(*witness.new_root.as_bytes());
         let valid = witness.proof.verify_range_inclusion(
             &mut hasher,
             &element_refs,

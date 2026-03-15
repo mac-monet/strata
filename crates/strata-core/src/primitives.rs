@@ -110,8 +110,8 @@ macro_rules! impl_fixed_u64_type {
     };
 }
 
-fn blake3_array(bytes: &[u8]) -> [u8; HASH_BYTES] {
-    *blake3::hash(bytes).as_bytes()
+fn keccak256_array(bytes: &[u8]) -> [u8; HASH_BYTES] {
+    alloy_primitives::keccak256(bytes).into()
 }
 
 #[cfg(feature = "serde")]
@@ -121,7 +121,7 @@ fn copy_array<const N: usize>(bytes: &[u8]) -> [u8; N] {
     array
 }
 
-/// Blake3 digest of the soul document text.
+/// Keccak256 digest of the soul document text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -130,13 +130,13 @@ pub struct SoulHash([u8; HASH_BYTES]);
 
 impl SoulHash {
     pub fn digest(bytes: &[u8]) -> Self {
-        Self(blake3_array(bytes))
+        Self(keccak256_array(bytes))
     }
 }
 
 impl_fixed_bytes_type!(SoulHash, HASH_BYTES);
 
-/// Blake3 digest of stored memory content bytes.
+/// Keccak256 digest of stored memory content bytes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -145,7 +145,7 @@ pub struct ContentHash([u8; HASH_BYTES]);
 
 impl ContentHash {
     pub fn digest(bytes: &[u8]) -> Self {
-        Self(blake3_array(bytes))
+        Self(keccak256_array(bytes))
     }
 }
 

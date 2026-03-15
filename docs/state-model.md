@@ -14,7 +14,7 @@ struct CoreState {
 }
 ```
 
-- **soul_hash**: SHA-256 hash of the soul document text. Full text lives in the rollup contract's public storage (see [soul.md](./soul.md))
+- **soul_hash**: Keccak256 hash of the soul document text. Full text lives in the rollup contract's public storage (see [soul.md](./soul.md))
 - **vector_index_root**: MMR root over the binary vector memory — the agent's unified knowledge store and retrieval index (see [vector-db.md](./vector-db.md))
 - **nonce**: Monotonically increasing counter for state transitions
 
@@ -45,18 +45,18 @@ fn transition(state: CoreState, input: Input) -> (CoreState, Option<Action>)
 
 Not everything happens inside the ZK proof. The boundary is:
 
-**Inside Jolt (proven):**
+**Inside ZK proof (proven):**
 - State validation (nonces, signatures, ordering)
 - Vector index merkle tree updates (adding/consolidating memories)
 - Structural integrity of all data
 
-**Outside Jolt (`strata-agent`, trusted to operator):**
+**Outside ZK proof (`strata-agent`, trusted to operator):**
 - LLM inference (generating responses, extracting facts, summarizing)
 - Skill execution (Rhai scripts interacting with external world)
 - Embedding generation (producing binary vectors from text)
 - HTTP/A2A server, witness preparation, L1 posting, reconstruction replay
 
-The LLM is the **proposer** — it suggests what to remember and what to do. Jolt is the **verifier** — it proves the bookkeeping was done honestly and the rules were followed. The proof doesn't guarantee the agent is smart, it guarantees the agent is honest.
+The LLM is the **proposer** — it suggests what to remember and what to do. The ZK prover is the **verifier** — it proves the bookkeeping was done honestly and the rules were followed. The proof doesn't guarantee the agent is smart, it guarantees the agent is honest.
 
 ## Nonce and Ordering
 

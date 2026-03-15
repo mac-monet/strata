@@ -86,10 +86,10 @@ pub fn verify_append<H: GuestHasher>(
     Ok(compute_root::<H>(count, &peaks))
 }
 
-#[cfg(all(test, feature = "blake3"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Blake3Hasher;
+    use crate::Keccak256Hasher;
 
     #[test]
     fn leaf_position_known_values() {
@@ -124,8 +124,8 @@ mod tests {
 
     #[test]
     fn empty_root_is_hash_of_zero_leaf_count() {
-        let root = compute_root::<Blake3Hasher>(0, &[]);
-        // Empty root = Blake3(0u64_be_bytes) = Blake3([0u8; 8])
+        let root = compute_root::<Keccak256Hasher>(0, &[]);
+        // Empty root = Keccak256(0u64_be_bytes) = Keccak256([0u8; 8])
         assert_ne!(root, [0u8; 32], "empty root should not be all zeros");
     }
 
@@ -135,12 +135,12 @@ mod tests {
         let mut count = 0u64;
         let entry = b"test entry";
 
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &[entry.to_vec()]);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &[entry.to_vec()]);
 
         assert_eq!(count, 1);
         assert_eq!(peaks.len(), 1); // popcount(1) = 1
 
-        let root = compute_root::<Blake3Hasher>(count, &peaks);
+        let root = compute_root::<Keccak256Hasher>(count, &peaks);
         assert_ne!(root, [0u8; 32]);
     }
 
@@ -149,7 +149,7 @@ mod tests {
         let mut peaks = Vec::new();
         let mut count = 0u64;
 
-        simulate_appends::<Blake3Hasher>(
+        simulate_appends::<Keccak256Hasher>(
             &mut peaks,
             &mut count,
             &[b"entry0".to_vec(), b"entry1".to_vec()],
@@ -164,7 +164,7 @@ mod tests {
         let mut peaks = Vec::new();
         let mut count = 0u64;
 
-        simulate_appends::<Blake3Hasher>(
+        simulate_appends::<Keccak256Hasher>(
             &mut peaks,
             &mut count,
             &[b"a".to_vec(), b"b".to_vec(), b"c".to_vec()],
@@ -176,10 +176,10 @@ mod tests {
 
     #[test]
     fn verify_append_rejects_wrong_peak_count() {
-        let old_root = compute_root::<Blake3Hasher>(0, &[]);
+        let old_root = compute_root::<Keccak256Hasher>(0, &[]);
 
         // Provide 1 peak for an empty MMR (should be 0)
-        let result = verify_append::<Blake3Hasher>(
+        let result = verify_append::<Keccak256Hasher>(
             &[[0u8; 32]],
             0,
             &old_root,
@@ -199,7 +199,7 @@ mod tests {
     fn verify_append_rejects_wrong_old_root() {
         let wrong_root = [0xFFu8; 32];
 
-        let result = verify_append::<Blake3Hasher>(
+        let result = verify_append::<Keccak256Hasher>(
             &[],
             0,
             &wrong_root,
@@ -211,16 +211,16 @@ mod tests {
 
     #[test]
     fn verify_append_from_empty() {
-        let empty_root = compute_root::<Blake3Hasher>(0, &[]);
+        let empty_root = compute_root::<Keccak256Hasher>(0, &[]);
         let entries = vec![b"alpha".to_vec(), b"beta".to_vec()];
 
-        let new_root = verify_append::<Blake3Hasher>(&[], 0, &empty_root, &entries).unwrap();
+        let new_root = verify_append::<Keccak256Hasher>(&[], 0, &empty_root, &entries).unwrap();
 
         // Build the same root manually
         let mut peaks = Vec::new();
         let mut count = 0u64;
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &entries);
-        let expected = compute_root::<Blake3Hasher>(count, &peaks);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &entries);
+        let expected = compute_root::<Keccak256Hasher>(count, &peaks);
 
         assert_eq!(new_root, expected);
     }
@@ -231,20 +231,20 @@ mod tests {
         let mut peaks = Vec::new();
         let mut count = 0u64;
         let first_batch = vec![b"a".to_vec(), b"b".to_vec()];
-        simulate_appends::<Blake3Hasher>(&mut peaks, &mut count, &first_batch);
-        let mid_root = compute_root::<Blake3Hasher>(count, &peaks);
+        simulate_appends::<Keccak256Hasher>(&mut peaks, &mut count, &first_batch);
+        let mid_root = compute_root::<Keccak256Hasher>(count, &peaks);
 
         // Verify appending a second batch
         let second_batch = vec![b"c".to_vec()];
         let new_root =
-            verify_append::<Blake3Hasher>(&peaks, count, &mid_root, &second_batch).unwrap();
+            verify_append::<Keccak256Hasher>(&peaks, count, &mid_root, &second_batch).unwrap();
 
         // Build expected from scratch
         let mut full_peaks = Vec::new();
         let mut full_count = 0u64;
         let all = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()];
-        simulate_appends::<Blake3Hasher>(&mut full_peaks, &mut full_count, &all);
-        let expected = compute_root::<Blake3Hasher>(full_count, &full_peaks);
+        simulate_appends::<Keccak256Hasher>(&mut full_peaks, &mut full_count, &all);
+        let expected = compute_root::<Keccak256Hasher>(full_count, &full_peaks);
 
         assert_eq!(new_root, expected);
     }

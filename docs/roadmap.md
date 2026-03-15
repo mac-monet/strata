@@ -9,13 +9,13 @@ The MVP proves the core thesis: a persistent, verifiable AI agent that lives on-
 - **Core types** (`strata-core`) — canonical shared types, serialization, validation. No-std compatible.
 - **Proof program** (`strata-proof`) — ZK transition logic: MMR operations, nonce validation, integrity checks. Ready for RISC-V compilation.
 - **Binary vector DB** (`strata-vector-db`) — authenticated append-only binary vector database over Journaled MMR. Hamming distance queries, flat scan, merkle commitment.
-- **ZK proving scaffold** (`strata-jolt`) — Jolt integration proof-of-concept. Guest compiles, proves, and verifies on host.
+- **ZK proving scaffold** (`strata-openvm`) — OpenVM proving scaffold. Guest program with keccak precompile, host placeholder.
 
 ### Must Have
 
 These are load-bearing — the thesis doesn't work without them.
 
-- **`strata-agent`** — the single host-side crate. Everything outside the proof boundary lives here: HTTP/A2A server, LLM + embedding clients, witness preparation, Jolt prover invocation, L1 posting (calldata + state roots), and reconstruction replay. There is no separate "host" vs "runtime" — the only meaningful boundary is inside vs outside the ZK proof, and `strata-proof` already owns the inside.
+- **`strata-agent`** — the single host-side crate. Everything outside the proof boundary lives here: HTTP/A2A server, LLM + embedding clients, witness preparation, OpenVM prover invocation, L1 posting (calldata + state roots), and reconstruction replay. There is no separate "host" vs "runtime" — the only meaningful boundary is inside vs outside the ZK proof, and `strata-proof` already owns the inside.
 - **Soul document** — plain text constitution committed at genesis. Hard constraints extracted and enforced in the state transition function.
 - **Storage** — raw memory content posted as calldata alongside state roots. Verifiable via `content_hash` in each memory entry.
 - **Rollup contract on Base** — post state roots and proofs. Verify proofs on-chain.

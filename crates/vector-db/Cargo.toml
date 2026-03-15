@@ -5,10 +5,15 @@ edition = "2024"
 
 [dependencies]
 strata-core = { path = "../strata-core" }
+alloy-primitives = "1"
+bytes = "1"
 commonware-codec = "2026.3.0"
 commonware-cryptography = "2026.3.0"
+commonware-math = "2026.3.0"
 commonware-runtime = "2026.3.0"
 commonware-storage = { version = "2026.3.0", features = ["std"] }
+commonware-utils = "2026.3.0"
+rand_core = "0.6"
 
 [dev-dependencies]
 commonware-runtime = { version = "2026.3.0" }

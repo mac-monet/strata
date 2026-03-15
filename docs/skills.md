@@ -37,7 +37,7 @@ The ZK proof covers the agent's core state machine — memory management, constr
 Why:
 - Tools are side-effectful (API calls, network requests, file operations)
 - Tools may change frequently as the agent adapts
-- Proving tool execution would require recompiling the Jolt guest on every change
+- Proving tool execution would require recompiling the ZK guest on every change
 - The core value proposition (persistent, verifiable state) doesn't depend on proving tool execution
 
 What gets proven:

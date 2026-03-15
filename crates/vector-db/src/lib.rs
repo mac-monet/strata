@@ -2,6 +2,7 @@
 
 mod db;
 mod error;
+pub mod keccak;
 mod query;
 
 pub use db::{VectorDB, VectorDBWitness};

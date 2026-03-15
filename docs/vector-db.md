@@ -11,7 +11,7 @@ Traditional vector databases use floating-point embeddings and cosine similarity
 Binary embeddings solve this completely:
 - Each embedding is a fixed-length bit vector (e.g., 256 bits = `[u64; 4]`)
 - Similarity is measured by **hamming distance**: XOR the two vectors and count the set bits (popcount)
-- XOR and popcount are cheap, native integer operations — trivial on RISC-V and efficient in Jolt
+- XOR and popcount are cheap, native integer operations — trivial on RISC-V and efficient in ZK
 
 ## Data Model
 

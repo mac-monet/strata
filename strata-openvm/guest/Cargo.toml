@@ -1,0 +1,11 @@
+[package]
+name = "strata-openvm-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+openvm = "1"
+openvm-keccak256-guest = "1"
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+strata-core = { path = "../../crates/strata-core", default-features = false, features = ["serde"] }
+strata-proof = { path = "../../crates/strata-proof", default-features = false, features = ["serde"] }

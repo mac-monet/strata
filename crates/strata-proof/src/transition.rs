@@ -48,10 +48,10 @@ pub fn transition<H: GuestHasher>(
     })
 }
 
-#[cfg(all(test, feature = "blake3"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Blake3Hasher, Witness};
+    use crate::{Keccak256Hasher, Witness};
     use alloc::vec;
     use strata_core::{BinaryEmbedding, ContentHash, MemoryEntry, MemoryId, SoulHash};
 
@@ -64,7 +64,7 @@ mod tests {
     }
 
     fn genesis_root() -> [u8; 32] {
-        crate::compute_root::<Blake3Hasher>(0, &[])
+        crate::compute_root::<Keccak256Hasher>(0, &[])
     }
 
     #[test]
@@ -86,7 +86,7 @@ mod tests {
         };
 
         let new_state =
-            transition::<Blake3Hasher>(state, Nonce::new(1), &witness).unwrap();
+            transition::<Keccak256Hasher>(state, Nonce::new(1), &witness).unwrap();
 
         assert_eq!(new_state.soul_hash, state.soul_hash);
         assert_eq!(new_state.nonce, Nonce::new(1));
@@ -107,7 +107,7 @@ mod tests {
             new_entries: vec![],
         };
 
-        let result = transition::<Blake3Hasher>(state, Nonce::new(1), &witness);
+        let result = transition::<Keccak256Hasher>(state, Nonce::new(1), &witness);
         assert_eq!(
             result,
             Err(TransitionError::InvalidNonce {
@@ -131,7 +131,7 @@ mod tests {
             new_entries: vec![sample_entry(0, b"data")],
         };
 
-        let result = transition::<Blake3Hasher>(state, Nonce::new(1), &witness);
+        let result = transition::<Keccak256Hasher>(state, Nonce::new(1), &witness);
         assert_eq!(result, Err(TransitionError::OldRootMismatch));
     }
 }

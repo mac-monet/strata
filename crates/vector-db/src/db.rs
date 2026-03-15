@@ -1,7 +1,7 @@
 use crate::error::VectorDbError;
 use crate::query::{self, QueryResult};
 use commonware_codec::Encode;
-use commonware_cryptography::blake3::Blake3;
+use crate::keccak::Keccak256;
 use commonware_runtime::{Clock, Metrics, Storage as RStorage};
 use commonware_storage::mmr::{
     Readable,
@@ -10,7 +10,7 @@ use commonware_storage::mmr::{
 };
 use strata_core::{BinaryEmbedding, MemoryEntry, MemoryId, VectorRoot};
 
-type Blake3Digest = <Blake3 as commonware_cryptography::Hasher>::Digest;
+type KeccakDigest = <Keccak256 as commonware_cryptography::Hasher>::Digest;
 
 /// Authenticated append-only vector database backed by a Journaled MMR.
 ///
@@ -19,8 +19,8 @@ type Blake3Digest = <Blake3 as commonware_cryptography::Hasher>::Digest;
 /// the raw entry data lives in the in-memory index, rebuilt from caller-provided
 /// entries on `open()`.
 pub struct VectorDB<E: RStorage + Clock + Metrics> {
-    mmr: Mmr<E, Blake3Digest>,
-    hasher: StandardHasher<Blake3>,
+    mmr: Mmr<E, KeccakDigest>,
+    hasher: StandardHasher<Keccak256>,
     index: Vec<MemoryEntry>,
 }
 
@@ -29,11 +29,11 @@ pub struct VectorDBWitness {
     pub old_root: VectorRoot,
     pub new_root: VectorRoot,
     pub new_entries: Vec<MemoryEntry>,
-    pub proof: Proof<Blake3Digest>,
+    pub proof: Proof<KeccakDigest>,
     pub start_location: Location,
 }
 
-fn digest_to_root(digest: &Blake3Digest) -> VectorRoot {
+fn digest_to_root(digest: &KeccakDigest) -> VectorRoot {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(digest.as_ref());
     VectorRoot::new(bytes)
@@ -45,7 +45,7 @@ impl<E: RStorage + Clock + Metrics> VectorDB<E> {
         context: E,
         config: journaled::Config,
     ) -> Result<Self, VectorDbError> {
-        let mut hasher = StandardHasher::<Blake3>::new();
+        let mut hasher = StandardHasher::<Keccak256>::new();
         let mmr = Mmr::init(context, &mut hasher, config)
             .await
             .map_err(|e| VectorDbError::MmrInit(e.to_string()))?;
@@ -69,7 +69,7 @@ impl<E: RStorage + Clock + Metrics> VectorDB<E> {
         config: journaled::Config,
         entries: Vec<MemoryEntry>,
     ) -> Result<Self, VectorDbError> {
-        let mut hasher = StandardHasher::<Blake3>::new();
+        let mut hasher = StandardHasher::<Keccak256>::new();
         let mmr = Mmr::init(context, &mut hasher, config)
             .await
             .map_err(|e| VectorDbError::MmrInit(e.to_string()))?;
