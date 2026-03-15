@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/strata-core", "crates/strata-proof", "crates/vector-db"]
+members = [".", "crates/strata-core", "crates/strata-proof", "crates/vector-db", "crates/strata-agent"]
 exclude = ["spikes/mmr", "archive/strata-jolt", "strata-openvm", "contracts"]
 resolver = "2"
 
