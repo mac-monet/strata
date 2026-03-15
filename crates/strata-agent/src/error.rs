@@ -10,4 +10,7 @@ pub enum AgentError {
 
     #[error("failed to parse response: {0}")]
     Parse(String),
+
+    #[error("embedding error: {0}")]
+    Embed(String),
 }
