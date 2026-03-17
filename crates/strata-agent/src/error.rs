@@ -16,4 +16,7 @@ pub enum AgentError {
 
     #[error("tool error: {0}")]
     Tool(String),
+
+    #[error("pipeline error: {0}")]
+    Pipeline(String),
 }

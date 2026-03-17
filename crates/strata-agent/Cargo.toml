@@ -9,6 +9,7 @@ local-embed = ["dep:tract-onnx", "dep:tokenizers"]
 
 [dependencies]
 strata-core = { path = "../strata-core", features = ["std", "serde"] }
+strata-proof = { path = "../strata-proof", features = ["std"] }
 strata-vector-db = { path = "../vector-db" }
 
 commonware-runtime = "2026.3.0"

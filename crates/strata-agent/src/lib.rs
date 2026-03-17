@@ -3,4 +3,5 @@
 pub mod embed;
 pub mod error;
 pub mod llm;
+pub mod pipeline;
 pub mod tools;

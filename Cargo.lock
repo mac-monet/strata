@@ -3841,6 +3841,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-core",
+ "strata-proof",
  "strata-vector-db",
  "thiserror 2.0.18",
  "tokenizers",
