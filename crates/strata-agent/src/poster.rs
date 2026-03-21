@@ -22,6 +22,13 @@ sol! {
     "../../contracts/out/StrataRollup.sol/StrataRollup.json"
 }
 
+// Mock contract that skips ZK verification — used for demo and testing.
+sol! {
+    #[sol(rpc, all_derives)]
+    MockStrataRollup,
+    "../../contracts/out/StrataRollup.t.sol/MockStrataRollup.json"
+}
+
 /// Configuration for posting transitions on-chain.
 #[derive(Clone, Debug)]
 pub struct PosterConfig {
@@ -29,6 +36,33 @@ pub struct PosterConfig {
     pub rpc_url: String,
     /// Deployed `StrataRollup` contract address.
     pub contract_address: Address,
+}
+
+/// Deploy a [`MockStrataRollup`] contract (skips ZK verification).
+///
+/// Takes fewer args than [`deploy_contract`] — no verifier or app commits.
+pub async fn deploy_mock_contract(
+    rpc_url: &str,
+    signer: PrivateKeySigner,
+    soul_text: &str,
+    initial_state_root: FixedBytes<32>,
+) -> Result<Address, AgentError> {
+    let operator = signer.address();
+    let wallet = EthereumWallet::from(signer);
+    let provider = ProviderBuilder::new()
+        .wallet(wallet)
+        .connect_http(parse_rpc_url(rpc_url)?);
+
+    let contract = MockStrataRollup::deploy(
+        &provider,
+        soul_text.to_string(),
+        operator,
+        initial_state_root,
+    )
+    .await
+    .map_err(|e| AgentError::Poster(format!("mock deploy failed: {e}")))?;
+
+    Ok(*contract.address())
 }
 
 fn parse_rpc_url(rpc_url: &str) -> Result<reqwest::Url, AgentError> {

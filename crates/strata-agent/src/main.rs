@@ -6,12 +6,13 @@ use strata_core::{CoreState, Nonce, SoulHash, VectorRoot};
 use strata_proof::{Keccak256Hasher, compute_root};
 use strata_vector_db::{Config as JournaledConfig, VectorDB};
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, FixedBytes};
+use alloy::signers::local::PrivateKeySigner;
 use strata_agent::agent::AgentConfig;
 use strata_agent::embed::ApiEmbedder;
 use strata_agent::llm::LlmClient;
-use strata_agent::poster::PosterConfig;
-use strata_agent::server::{self, AppState};
+use strata_agent::poster::{self, PosterConfig};
+use strata_agent::server::{self, AppState, PostingConfig};
 use strata_agent::tools::ToolExecutor;
 
 const DEFAULT_PORT: u16 = 3000;
@@ -40,7 +41,10 @@ fn main() {
     let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
     eprintln!("starting strata-agent on {addr}");
 
-    let reconstruct_addr = std::env::var("RECONSTRUCT_CONTRACT").ok();
+    let contract_addr_env = std::env::var("CONTRACT_ADDRESS").ok();
+    let reconstruct = std::env::var("RECONSTRUCT")
+        .ok()
+        .map(|v| v == "1" || v == "true");
 
     tokio::Runner::default().start(|context| async move {
         let db_config = make_db_config(&context);
@@ -48,8 +52,12 @@ fn main() {
             .await
             .expect("failed to initialize VectorDB");
 
-        let (agent_state, executor) = if let Some(addr_str) = reconstruct_addr {
-            let address: Address = addr_str.parse().expect("invalid RECONSTRUCT_CONTRACT address");
+        let (agent_state, executor) = if reconstruct == Some(true) {
+            let address: Address = contract_addr_env
+                .as_deref()
+                .expect("CONTRACT_ADDRESS required for reconstruction")
+                .parse()
+                .expect("invalid CONTRACT_ADDRESS");
             let rpc_url = std::env::var("RPC_URL").expect("RPC_URL required for reconstruction");
             let config = PosterConfig {
                 rpc_url,
@@ -98,6 +106,37 @@ fn main() {
             (genesis, executor)
         };
 
+        // Wire optional on-chain posting (mock proofs).
+        let posting = if let Ok(rpc_url) = std::env::var("RPC_URL") {
+            let key_hex = std::env::var("OPERATOR_KEY")
+                .expect("OPERATOR_KEY required with RPC_URL");
+            let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
+
+            let contract_address = if let Ok(addr_str) = std::env::var("CONTRACT_ADDRESS") {
+                addr_str.parse().expect("invalid CONTRACT_ADDRESS")
+            } else {
+                // Auto-deploy mock contract
+                // TODO: nonce mismatch if used after reconstruction — the mock
+                // contract starts at nonce 0 but the agent's state may be ahead.
+                let genesis_root =
+                    FixedBytes::from(*agent_state.vector_index_root.as_bytes());
+                poster::deploy_mock_contract(&rpc_url, signer.clone(), &soul, genesis_root)
+                    .await
+                    .expect("mock deploy failed")
+            };
+
+            eprintln!("posting to contract {contract_address}");
+            Some(PostingConfig {
+                poster: PosterConfig {
+                    rpc_url,
+                    contract_address,
+                },
+                signer,
+            })
+        } else {
+            None
+        };
+
         let state = Arc::new(AppState::new(
             AgentConfig {
                 soul,
@@ -105,6 +144,7 @@ fn main() {
             },
             llm_client,
             executor,
+            posting,
         ));
 
         eprintln!("agent ready — POST http://{addr}/a2a");

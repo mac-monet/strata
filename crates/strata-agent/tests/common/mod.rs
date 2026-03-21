@@ -4,7 +4,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
 
-use commonware_runtime::deterministic;
+use commonware_runtime::BufferPooler;
 use strata_core::{BinaryEmbedding, CoreState, Nonce, SoulHash, VectorRoot};
 use strata_proof::{Keccak256Hasher, compute_root};
 use strata_vector_db::Config as JournaledConfig;
@@ -33,7 +33,7 @@ impl Embedder for FixedEmbedder {
 
 /// Build a `JournaledConfig` for VectorDB tests. The suffix is used to
 /// create unique partition names so tests don't collide.
-pub fn make_config(suffix: &str, context: &deterministic::Context) -> JournaledConfig {
+pub fn make_config(suffix: &str, context: &impl BufferPooler) -> JournaledConfig {
     let page_size = NonZeroU16::new(4096).unwrap();
     let page_cache_size = NonZeroUsize::new(8).unwrap();
     JournaledConfig {

@@ -13,11 +13,20 @@ use axum::{
 use commonware_runtime::{Clock, Metrics, Storage as RStorage};
 use serde::{Deserialize, Serialize};
 
+use alloy::signers::local::PrivateKeySigner;
+
 use crate::agent::{self, AgentConfig};
 use crate::error::AgentError;
 use crate::llm::{self, LlmClient};
 use crate::pipeline::TransitionOutput;
+use crate::poster::{self, PosterConfig};
 use crate::tools::ToolExecutor;
+
+/// Optional on-chain posting configuration.
+pub struct PostingConfig {
+    pub poster: PosterConfig,
+    pub signer: PrivateKeySigner,
+}
 
 // --- JSON-RPC error codes ---
 
@@ -33,15 +42,22 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     pub(crate) client: LlmClient,
     pub(crate) executor: tokio::sync::Mutex<ToolExecutor<E>>,
     pub(crate) transitions: tokio::sync::Mutex<Vec<TransitionOutput>>,
+    pub(crate) posting: Option<PostingConfig>,
 }
 
 impl<E: RStorage + Clock + Metrics> AppState<E> {
-    pub fn new(config: AgentConfig, client: LlmClient, executor: ToolExecutor<E>) -> Self {
+    pub fn new(
+        config: AgentConfig,
+        client: LlmClient,
+        executor: ToolExecutor<E>,
+        posting: Option<PostingConfig>,
+    ) -> Self {
         Self {
             config: tokio::sync::Mutex::new(config),
             client,
             executor: tokio::sync::Mutex::new(executor),
             transitions: tokio::sync::Mutex::new(Vec::new()),
+            posting,
         }
     }
 }
@@ -242,6 +258,16 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
     match agent::interact(&mut config, &state.client, &mut executor, &messages).await {
         Ok(result) => {
             if let Some(transition) = result.transition {
+                if let Some(posting) = &state.posting {
+                    if let Err(e) = post_with_retry(posting, &transition).await {
+                        return rpc_error(
+                            StatusCode::OK,
+                            id,
+                            INTERNAL_ERROR,
+                            format!("transition succeeded locally but posting failed: {e}"),
+                        );
+                    }
+                }
                 state.transitions.lock().await.push(transition);
             }
 
@@ -271,6 +297,47 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
         }
         Err(e) => rpc_error(StatusCode::OK, id, INTERNAL_ERROR, e.to_string()),
     }
+}
+
+// --- Posting with retry ---
+
+const POST_MAX_RETRIES: u32 = 5;
+const POST_RETRY_BASE_MS: u64 = 500;
+
+async fn post_with_retry(
+    posting: &PostingConfig,
+    transition: &TransitionOutput,
+) -> Result<(), AgentError> {
+    let nonce = transition.new_state.nonce.get();
+    let mut last_err = None;
+    for attempt in 0..POST_MAX_RETRIES {
+        match poster::post(
+            &posting.poster,
+            posting.signer.clone(),
+            vec![], // empty proof — mock verifier
+            transition.public_values,
+            transition,
+        )
+        .await
+        {
+            Ok(hash) => {
+                eprintln!("posted transition nonce={nonce}, tx={hash}");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!(
+                    "post attempt {}/{POST_MAX_RETRIES} failed for nonce={nonce}: {e}",
+                    attempt + 1
+                );
+                last_err = Some(e);
+                if attempt + 1 < POST_MAX_RETRIES {
+                    let delay = POST_RETRY_BASE_MS * 2u64.pow(attempt);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| AgentError::Poster("posting failed".into())))
 }
 
 // --- Router + startup ---
