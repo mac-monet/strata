@@ -6,9 +6,11 @@ use strata_core::{CoreState, Nonce, SoulHash, VectorRoot};
 use strata_proof::{Keccak256Hasher, compute_root};
 use strata_vector_db::{Config as JournaledConfig, VectorDB};
 
+use alloy::primitives::Address;
 use strata_agent::agent::AgentConfig;
 use strata_agent::embed::ApiEmbedder;
 use strata_agent::llm::LlmClient;
+use strata_agent::poster::PosterConfig;
 use strata_agent::server::{self, AppState};
 use strata_agent::tools::ToolExecutor;
 
@@ -38,19 +40,68 @@ fn main() {
     let addr: std::net::SocketAddr = ([0, 0, 0, 0], port).into();
     eprintln!("starting strata-agent on {addr}");
 
+    let reconstruct_addr = std::env::var("RECONSTRUCT_CONTRACT").ok();
+
     tokio::Runner::default().start(|context| async move {
         let db_config = make_db_config(&context);
-        let db = VectorDB::new(context, db_config)
+        let mut db = VectorDB::new(context, db_config)
             .await
             .expect("failed to initialize VectorDB");
 
-        let genesis = genesis_state(&soul);
-        let executor = ToolExecutor::new(db, Box::new(embedder));
+        let (agent_state, executor) = if let Some(addr_str) = reconstruct_addr {
+            let address: Address = addr_str.parse().expect("invalid RECONSTRUCT_CONTRACT address");
+            let rpc_url = std::env::var("RPC_URL").expect("RPC_URL required for reconstruction");
+            let config = PosterConfig {
+                rpc_url,
+                contract_address: address,
+            };
+
+            assert!(
+                db.is_empty(),
+                "VectorDB is not empty — reconstruction requires a fresh database"
+            );
+
+            eprintln!("reconstructing state from contract {address}...");
+            let reconstructed = strata_agent::reconstruct::reconstruct(&config)
+                .await
+                .expect("reconstruction failed");
+
+            let local_soul_hash = strata_core::SoulHash::digest(soul.as_bytes());
+            assert_eq!(
+                local_soul_hash, reconstructed.state.soul_hash,
+                "local soul text does not match on-chain soul hash"
+            );
+
+            db.batch_append(reconstructed.entries)
+                .await
+                .expect("batch append failed");
+
+            assert_eq!(
+                db.root().as_bytes(),
+                reconstructed.state.vector_index_root.as_bytes(),
+                "reconstructed root does not match on-chain state root"
+            );
+
+            eprintln!(
+                "reconstruction complete: {} entries, nonce {}",
+                db.len(),
+                reconstructed.state.nonce.get()
+            );
+
+            let executor = ToolExecutor::new(db, Box::new(embedder))
+                .with_contents(reconstructed.contents)
+                .expect("contents mismatch");
+            (reconstructed.state, executor)
+        } else {
+            let genesis = genesis_state(&soul);
+            let executor = ToolExecutor::new(db, Box::new(embedder));
+            (genesis, executor)
+        };
 
         let state = Arc::new(AppState::new(
             AgentConfig {
                 soul,
-                state: genesis,
+                state: agent_state,
             },
             llm_client,
             executor,

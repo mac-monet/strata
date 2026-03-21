@@ -118,6 +118,18 @@ pub async fn read_nonce(config: &PosterConfig) -> Result<u64, AgentError> {
     Ok(nonce)
 }
 
+/// Read the soul hash from the contract.
+pub async fn read_soul_hash(config: &PosterConfig) -> Result<FixedBytes<32>, AgentError> {
+    let provider = ProviderBuilder::new().connect_http(parse_rpc_url(&config.rpc_url)?);
+    let contract = StrataRollup::new(config.contract_address, &provider);
+    let hash = contract
+        .soulHash()
+        .call()
+        .await
+        .map_err(|e| AgentError::Poster(format!("read soul hash failed: {e}")))?;
+    Ok(hash)
+}
+
 /// Read the current state root from the contract.
 pub async fn read_state_root(config: &PosterConfig) -> Result<FixedBytes<32>, AgentError> {
     let provider = ProviderBuilder::new().connect_http(parse_rpc_url(&config.rpc_url)?);
