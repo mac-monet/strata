@@ -1,39 +1,10 @@
+mod common;
+
 use commonware_runtime::{deterministic, Runner as _};
-use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
-use strata_core::{
-    BinaryEmbedding, ContentHash, CoreState, MemoryEntry, MemoryId, Nonce, SoulHash, VectorRoot,
-};
-use strata_proof::{Keccak256Hasher, compute_root};
-use strata_vector_db::{Config as JournaledConfig, VectorDB};
+use strata_core::{BinaryEmbedding, ContentHash, CoreState, MemoryEntry, MemoryId, Nonce, SoulHash};
+use strata_vector_db::VectorDB;
 
-use strata_agent::pipeline::{self, Snapshot};
-
-fn make_config(suffix: &str, context: &deterministic::Context) -> JournaledConfig {
-    let page_size = NonZeroU16::new(4096).unwrap();
-    let page_cache_size = NonZeroUsize::new(8).unwrap();
-
-    JournaledConfig {
-        journal_partition: format!("pipeline-journal-{suffix}"),
-        metadata_partition: format!("pipeline-meta-{suffix}"),
-        items_per_blob: NonZeroU64::new(1000).unwrap(),
-        write_buffer: NonZeroUsize::new(1024).unwrap(),
-        thread_pool: None,
-        page_cache: commonware_runtime::buffer::paged::CacheRef::from_pooler(
-            context,
-            page_size,
-            page_cache_size,
-        ),
-    }
-}
-
-fn genesis_state() -> CoreState {
-    let root = compute_root::<Keccak256Hasher>(0, &[]);
-    CoreState {
-        soul_hash: SoulHash::digest(b"test-soul"),
-        vector_index_root: VectorRoot::new(root),
-        nonce: Nonce::new(0),
-    }
-}
+use strata_agent::pipeline;
 
 fn make_entry(id: u64, text: &[u8]) -> MemoryEntry {
     MemoryEntry::new(
@@ -46,9 +17,9 @@ fn make_entry(id: u64, text: &[u8]) -> MemoryEntry {
 #[test]
 fn single_memory_transition_from_genesis() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("single", &context);
+        let config = common::make_config("single", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
-        let state = genesis_state();
+        let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
 
@@ -71,9 +42,9 @@ fn single_memory_transition_from_genesis() {
 #[test]
 fn multiple_memories_in_one_transition() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("multi", &context);
+        let config = common::make_config("multi", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
-        let state = genesis_state();
+        let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
 
@@ -99,9 +70,9 @@ fn multiple_memories_in_one_transition() {
 #[test]
 fn no_new_memories_returns_error() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("no-new", &context);
+        let config = common::make_config("no-new", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let state = genesis_state();
+        let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
         let contents: Vec<String> = vec![];
@@ -120,9 +91,9 @@ fn no_new_memories_returns_error() {
 #[test]
 fn public_values_byte_layout() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("layout", &context);
+        let config = common::make_config("layout", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
-        let state = genesis_state();
+        let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
         let old_root = *state.vector_index_root.as_bytes();
@@ -150,7 +121,7 @@ fn public_values_byte_layout() {
 #[test]
 fn nonce_increments_from_nonzero() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("nonce-incr", &context);
+        let config = common::make_config("nonce-incr", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
 
         // Pre-populate DB with 2 entries (simulating prior transitions)
@@ -188,9 +159,9 @@ fn nonce_increments_from_nonzero() {
 #[test]
 fn short_contents_returns_error() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("short-contents", &context);
+        let config = common::make_config("short-contents", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
-        let state = genesis_state();
+        let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
 
@@ -212,9 +183,9 @@ fn short_contents_returns_error() {
 #[test]
 fn chained_transitions() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("chained", &context);
+        let config = common::make_config("chained", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
-        let mut state = genesis_state();
+        let mut state = common::genesis_state();
         let mut contents: Vec<String> = Vec::new();
 
         // First transition: add one entry

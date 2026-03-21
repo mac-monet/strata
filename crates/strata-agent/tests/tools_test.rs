@@ -1,39 +1,10 @@
+mod common;
+
 use commonware_runtime::{deterministic, Runner as _};
 use serde_json::json;
-use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
-use strata_core::BinaryEmbedding;
-use strata_vector_db::{Config as JournaledConfig, VectorDB};
+use strata_vector_db::VectorDB;
 
-use strata_agent::embed::Embedder;
-use strata_agent::error::AgentError;
 use strata_agent::tools::{self, ToolExecutor};
-
-/// Deterministic embedder for testing: embeds any text to test_from_id(0).
-struct FixedEmbedder;
-
-impl Embedder for FixedEmbedder {
-    fn embed(&self, _text: &str) -> Result<BinaryEmbedding, AgentError> {
-        Ok(BinaryEmbedding::test_from_id(0))
-    }
-}
-
-fn make_config(suffix: &str, context: &deterministic::Context) -> JournaledConfig {
-    let page_size = NonZeroU16::new(4096).unwrap();
-    let page_cache_size = NonZeroUsize::new(8).unwrap();
-
-    JournaledConfig {
-        journal_partition: format!("tools-journal-{suffix}"),
-        metadata_partition: format!("tools-meta-{suffix}"),
-        items_per_blob: NonZeroU64::new(1000).unwrap(),
-        write_buffer: NonZeroUsize::new(1024).unwrap(),
-        thread_pool: None,
-        page_cache: commonware_runtime::buffer::paged::CacheRef::from_pooler(
-            context,
-            page_size,
-            page_cache_size,
-        ),
-    }
-}
 
 #[test]
 fn definitions_returns_three_tools() {
@@ -47,9 +18,9 @@ fn definitions_returns_three_tools() {
 #[test]
 fn remember_and_recall_round_trip() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("round-trip", &context);
+        let config = common::make_config("round-trip", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let mut executor = ToolExecutor::new(db, Box::new(FixedEmbedder));
+        let mut executor = ToolExecutor::new(db, Box::new(common::FixedEmbedder));
 
         // Remember something
         let result = executor
@@ -74,9 +45,9 @@ fn remember_and_recall_round_trip() {
 #[test]
 fn recall_empty_db() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("empty-recall", &context);
+        let config = common::make_config("empty-recall", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let mut executor = ToolExecutor::new(db, Box::new(FixedEmbedder));
+        let mut executor = ToolExecutor::new(db, Box::new(common::FixedEmbedder));
 
         let result = executor
             .execute("recall", &json!({"query": "anything"}))
@@ -92,9 +63,9 @@ fn recall_empty_db() {
 #[test]
 fn remember_increments_ids() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("incr-ids", &context);
+        let config = common::make_config("incr-ids", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let mut executor = ToolExecutor::new(db, Box::new(FixedEmbedder));
+        let mut executor = ToolExecutor::new(db, Box::new(common::FixedEmbedder));
 
         let r0 = executor
             .execute("remember", &json!({"text": "first"}))
@@ -119,9 +90,9 @@ fn remember_increments_ids() {
 #[test]
 fn unknown_tool_returns_error() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("unknown", &context);
+        let config = common::make_config("unknown", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let mut executor = ToolExecutor::new(db, Box::new(FixedEmbedder));
+        let mut executor = ToolExecutor::new(db, Box::new(common::FixedEmbedder));
 
         let result = executor
             .execute("nonexistent", &json!({}))
@@ -137,9 +108,9 @@ fn unknown_tool_returns_error() {
 #[test]
 fn missing_params_returns_parse_error() {
     deterministic::Runner::default().start(|context| async move {
-        let config = make_config("bad-params", &context);
+        let config = common::make_config("bad-params", &context);
         let db = VectorDB::new(context, config).await.unwrap();
-        let mut executor = ToolExecutor::new(db, Box::new(FixedEmbedder));
+        let mut executor = ToolExecutor::new(db, Box::new(common::FixedEmbedder));
 
         let result = executor.execute("recall", &json!({})).await;
         assert!(result.is_err());

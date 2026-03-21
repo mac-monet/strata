@@ -21,6 +21,7 @@ pub struct Snapshot {
 }
 
 /// Output of a finalized transition.
+#[derive(Debug)]
 pub struct TransitionOutput {
     pub record: TransitionRecord,
     pub witness: Witness,

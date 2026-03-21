@@ -78,12 +78,14 @@ impl ApiEmbedder {
 }
 
 impl Embedder for ApiEmbedder {
-    fn embed(&self, text: &str) -> Result<BinaryEmbedding, AgentError> {
-        // Block on the async call. The caller should use embed_async() directly
-        // when already in an async context. This impl exists for trait uniformity.
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.embed_async(text))
-        })
+    fn embed(
+        &self,
+        text: &str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<BinaryEmbedding, AgentError>> + Send + '_>,
+    > {
+        let text = text.to_owned();
+        Box::pin(async move { self.embed_async(&text).await })
     }
 }
 

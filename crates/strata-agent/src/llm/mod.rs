@@ -76,12 +76,17 @@ pub trait Provider: Send + Sync {
 
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 
+/// Mock send function type for testing (bypasses HTTP).
+type MockSendFn =
+    Box<dyn Fn(&ChatRequest) -> Result<ChatResponse, AgentError> + Send + Sync>;
+
 /// Multi-provider LLM client.
 pub struct LlmClient {
     http: Client,
     provider: Box<dyn Provider>,
     model: String,
     max_tokens: u32,
+    mock_send: Option<MockSendFn>,
 }
 
 impl LlmClient {
@@ -98,6 +103,7 @@ impl LlmClient {
             provider: Box::new(provider),
             model,
             max_tokens: DEFAULT_MAX_TOKENS,
+            mock_send: None,
         }
     }
 
@@ -114,6 +120,7 @@ impl LlmClient {
             provider: Box::new(provider),
             model,
             max_tokens: DEFAULT_MAX_TOKENS,
+            mock_send: None,
         }
     }
 
@@ -134,6 +141,24 @@ impl LlmClient {
             provider: Box::new(provider),
             model,
             max_tokens: DEFAULT_MAX_TOKENS,
+            mock_send: None,
+        }
+    }
+
+    /// Create a mock client for testing. The provided function is called
+    /// instead of making HTTP requests.
+    #[doc(hidden)]
+    pub fn mock(
+        f: impl Fn(&ChatRequest) -> Result<ChatResponse, AgentError> + Send + Sync + 'static,
+    ) -> Self {
+        let provider = Anthropic::new("mock".into());
+        let model = provider.default_model.clone();
+        Self {
+            http: Client::new(),
+            provider: Box::new(provider),
+            model,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            mock_send: Some(Box::new(f)),
         }
     }
 
@@ -149,6 +174,10 @@ impl LlmClient {
 
     /// Send a chat request and return the parsed response.
     pub async fn send(&self, request: &ChatRequest) -> Result<ChatResponse, AgentError> {
+        if let Some(mock) = &self.mock_send {
+            return mock(request);
+        }
+
         let body = self
             .provider
             .build_body(request, &self.model, self.max_tokens);
@@ -262,6 +291,18 @@ impl Message {
             role: Role::User,
             content: vec![ContentBlock::Text { text: text.into() }],
         }
+    }
+
+    /// Extract all text blocks concatenated.
+    pub fn text(&self) -> String {
+        self.content
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
     }
 }
 

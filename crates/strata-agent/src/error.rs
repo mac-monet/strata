@@ -25,4 +25,7 @@ pub enum AgentError {
 
     #[error("poster error: {0}")]
     Poster(String),
+
+    #[error("agent error: {0}")]
+    Agent(String),
 }

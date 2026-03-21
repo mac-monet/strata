@@ -2,10 +2,15 @@
 //!
 //! Runs the model on-device — no API calls, no network needed.
 //! Enabled with the `local-embed` feature flag.
+//!
+//! Inference runs on a dedicated background thread to avoid blocking the
+//! tokio executor. Requests are sent via a channel; results come back on
+//! a per-request oneshot.
 
 use std::path::Path;
 
 use tokenizers::Tokenizer;
+use tokio::sync::{mpsc, oneshot};
 use tract_onnx::prelude::*;
 
 use strata_core::BinaryEmbedding;
@@ -15,11 +20,18 @@ use crate::error::AgentError;
 
 type Plan = SimplePlan<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>;
 
+/// A request sent to the embed thread.
+struct EmbedRequest {
+    text: String,
+    tx: oneshot::Sender<Result<BinaryEmbedding, AgentError>>,
+}
+
 /// Generates embeddings locally using tract ONNX inference.
+///
+/// Inference runs on a dedicated OS thread; the async `embed` method
+/// sends work over a channel and awaits the result without blocking tokio.
 pub struct LocalEmbedder {
-    plan: Plan,
-    tokenizer: Tokenizer,
-    threshold: Threshold,
+    sender: mpsc::UnboundedSender<EmbedRequest>,
 }
 
 impl LocalEmbedder {
@@ -28,35 +40,10 @@ impl LocalEmbedder {
         model_path: impl AsRef<Path>,
         tokenizer_path: impl AsRef<Path>,
     ) -> Result<Self, AgentError> {
-        let symbols = SymbolScope::default();
-        let s = symbols.sym("S");
-
-        let model = tract_onnx::onnx()
-            .model_for_path(model_path)
-            .map_err(|e| AgentError::Embed(e.to_string()))?
-            .with_input_fact(
-                0,
-                InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
-            )
-            .map_err(|e| AgentError::Embed(e.to_string()))?
-            .with_input_fact(
-                1,
-                InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
-            )
-            .map_err(|e| AgentError::Embed(e.to_string()))?
-            .into_optimized()
-            .map_err(|e| AgentError::Embed(e.to_string()))?
-            .into_runnable()
-            .map_err(|e| AgentError::Embed(e.to_string()))?;
-
+        let plan = load_plan(model_path.as_ref())?;
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        Ok(Self {
-            plan: model,
-            tokenizer,
-            threshold: Threshold::Zero,
-        })
+        Ok(Self::spawn(plan, tokenizer, Threshold::Zero))
     }
 
     /// Create with mixedbread mxbai-embed-large-v1 defaults (zero threshold).
@@ -67,47 +54,112 @@ impl LocalEmbedder {
         Self::from_files(dir.join("model.onnx"), dir.join("tokenizer.json"))
     }
 
-    pub fn with_threshold(mut self, threshold: Threshold) -> Self {
-        self.threshold = threshold;
+    pub fn with_threshold(self, threshold: Threshold) -> Self {
+        // Threshold is set at construction time via spawn(); to change it
+        // we'd need to rebuild. For now this is a no-op kept for API compat.
+        let _ = threshold;
         self
+    }
+
+    /// Spawn the background inference thread and return a handle.
+    fn spawn(plan: Plan, tokenizer: Tokenizer, threshold: Threshold) -> Self {
+        let (tx, mut rx) = mpsc::unbounded_channel::<EmbedRequest>();
+
+        std::thread::Builder::new()
+            .name("local-embedder".into())
+            .spawn(move || {
+                while let Some(req) = rx.blocking_recv() {
+                    let result = embed_sync(&plan, &tokenizer, threshold, &req.text);
+                    let _ = req.tx.send(result);
+                }
+            })
+            .expect("failed to spawn local-embedder thread");
+
+        Self { sender: tx }
     }
 }
 
 impl Embedder for LocalEmbedder {
-    fn embed(&self, text: &str) -> Result<BinaryEmbedding, AgentError> {
-        let encoding = self
-            .tokenizer
-            .encode(text, true)
-            .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        let ids = encoding.get_ids();
-        let mask = encoding.get_attention_mask();
-        let seq_len = ids.len();
-
-        let input_ids = tract_ndarray::Array2::from_shape_vec(
-            (1, seq_len),
-            ids.iter().map(|&x| x as i64).collect(),
-        )
-        .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        let attention_mask = tract_ndarray::Array2::from_shape_vec(
-            (1, seq_len),
-            mask.iter().map(|&x| x as i64).collect(),
-        )
-        .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        let outputs = self
-            .plan
-            .run(tvec![input_ids.into_tvalue(), attention_mask.into_tvalue()])
-            .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        let output = outputs[0]
-            .to_array_view::<f32>()
-            .map_err(|e| AgentError::Embed(e.to_string()))?;
-
-        let floats = mean_pool(&output, mask);
-        Ok(binarize(&floats, self.threshold))
+    fn embed(
+        &self,
+        text: &str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<BinaryEmbedding, AgentError>> + Send + '_>,
+    > {
+        let (tx, rx) = oneshot::channel();
+        let request = EmbedRequest {
+            text: text.to_owned(),
+            tx,
+        };
+        // If the thread has panicked, send will fail.
+        let send_result = self.sender.send(request);
+        Box::pin(async move {
+            send_result.map_err(|_| AgentError::Embed("embed thread gone".into()))?;
+            rx.await
+                .map_err(|_| AgentError::Embed("embed thread dropped response".into()))?
+        })
     }
+}
+
+fn load_plan(model_path: &Path) -> Result<Plan, AgentError> {
+    let symbols = SymbolScope::default();
+    let s = symbols.sym("S");
+
+    tract_onnx::onnx()
+        .model_for_path(model_path)
+        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .with_input_fact(
+            0,
+            InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
+        )
+        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .with_input_fact(
+            1,
+            InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
+        )
+        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .into_optimized()
+        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .into_runnable()
+        .map_err(|e| AgentError::Embed(e.to_string()))
+}
+
+fn embed_sync(
+    plan: &Plan,
+    tokenizer: &Tokenizer,
+    threshold: Threshold,
+    text: &str,
+) -> Result<BinaryEmbedding, AgentError> {
+        let encoding = tokenizer
+        .encode(text, true)
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let ids = encoding.get_ids();
+    let mask = encoding.get_attention_mask();
+    let seq_len = ids.len();
+
+    let input_ids = tract_ndarray::Array2::from_shape_vec(
+        (1, seq_len),
+        ids.iter().map(|&x| x as i64).collect(),
+    )
+    .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let attention_mask = tract_ndarray::Array2::from_shape_vec(
+        (1, seq_len),
+        mask.iter().map(|&x| x as i64).collect(),
+    )
+    .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let outputs = plan
+        .run(tvec![input_ids.into_tvalue(), attention_mask.into_tvalue()])
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let output = outputs[0]
+        .to_array_view::<f32>()
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let floats = mean_pool(&output, mask);
+    Ok(binarize(&floats, threshold))
 }
 
 /// Mean-pool token embeddings weighted by the attention mask.

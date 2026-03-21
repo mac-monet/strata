@@ -25,5 +25,10 @@ use crate::error::AgentError;
 /// Trait for generating binary embeddings from text.
 pub trait Embedder: Send + Sync {
     /// Generate a binary embedding for the given text.
-    fn embed(&self, text: &str) -> Result<BinaryEmbedding, AgentError>;
+    fn embed(
+        &self,
+        text: &str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<BinaryEmbedding, AgentError>> + Send + '_>,
+    >;
 }

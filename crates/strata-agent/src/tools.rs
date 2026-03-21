@@ -98,6 +98,9 @@ pub struct ToolExecutor<E: RStorage + Clock + Metrics> {
     contents: Vec<String>,
     bash_timeout: Duration,
     max_output_bytes: usize,
+    /// Cached embedding from auto_recall, reused if the recall tool
+    /// queries the same text to avoid double-embedding.
+    embed_cache: Option<(String, strata_core::BinaryEmbedding)>,
 }
 
 impl<E: RStorage + Clock + Metrics> ToolExecutor<E> {
@@ -108,6 +111,7 @@ impl<E: RStorage + Clock + Metrics> ToolExecutor<E> {
             contents: Vec::new(),
             bash_timeout: DEFAULT_BASH_TIMEOUT,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+            embed_cache: None,
         }
     }
 
@@ -142,20 +146,24 @@ impl<E: RStorage + Clock + Metrics> ToolExecutor<E> {
         input: &serde_json::Value,
     ) -> Result<ToolOutput, AgentError> {
         match name {
-            "recall" => self.recall(input),
+            "recall" => self.recall(input).await,
             "remember" => self.remember(input).await,
             "bash" => self.bash(input).await,
             _ => Ok(ToolOutput::err(format!("unknown tool: {name}"))),
         }
     }
 
-    fn recall(&self, input: &serde_json::Value) -> Result<ToolOutput, AgentError> {
+    async fn recall(&mut self, input: &serde_json::Value) -> Result<ToolOutput, AgentError> {
         let query = input
             .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AgentError::Parse("recall requires a 'query' string".into()))?;
 
-        let embedding = self.embedder.embed(query)?;
+        // Reuse cached embedding from auto_recall if the query matches.
+        let embedding = match &self.embed_cache {
+            Some((cached_text, cached_emb)) if cached_text == query => cached_emb.clone(),
+            _ => self.embedder.embed(query).await?,
+        };
         let results = self.db.query(&embedding, DEFAULT_RECALL_K);
 
         if results.is_empty() {
@@ -188,7 +196,7 @@ impl<E: RStorage + Clock + Metrics> ToolExecutor<E> {
             .and_then(|v| v.as_str())
             .ok_or_else(|| AgentError::Parse("remember requires a 'text' string".into()))?;
 
-        let embedding = self.embedder.embed(text)?;
+        let embedding = self.embedder.embed(text).await?;
         let content_hash = ContentHash::digest(text.as_bytes());
         let id = MemoryId::new(self.db.len());
         let entry = MemoryEntry::new(id, embedding, content_hash);
@@ -210,6 +218,34 @@ impl<E: RStorage + Clock + Metrics> ToolExecutor<E> {
             .ok_or_else(|| AgentError::Parse("bash requires a 'command' string".into()))?;
 
         execute_bash(command, self.bash_timeout, self.max_output_bytes).await
+    }
+
+    /// Auto-recall: embed a query and return relevant memories as formatted context.
+    /// Returns `None` if the DB is empty or no results are found.
+    pub async fn auto_recall(&mut self, query: &str) -> Result<Option<String>, AgentError> {
+        if self.db.is_empty() {
+            return Ok(None);
+        }
+
+        let embedding = self.embedder.embed(query).await?;
+        self.embed_cache = Some((query.to_owned(), embedding.clone()));
+        let results = self.db.query(&embedding, DEFAULT_RECALL_K);
+
+        if results.is_empty() {
+            return Ok(None);
+        }
+
+        let mut context = String::from("Relevant memories:\n");
+        for r in &results {
+            let id = r.entry.id.get() as usize;
+            let text = self
+                .contents
+                .get(id)
+                .map(|s| s.as_str())
+                .unwrap_or("[content unavailable]");
+            context.push_str(&format!("- [#{}] {}\n", r.entry.id.get(), text));
+        }
+        Ok(Some(context))
     }
 
     /// Access the underlying VectorDB.

@@ -23,6 +23,7 @@ impl Anthropic {
             default_model: DEFAULT_MODEL.to_string(),
         }
     }
+
 }
 
 impl Provider for Anthropic {
@@ -64,7 +65,7 @@ impl Provider for Anthropic {
             body["system"] = json!(system);
         }
 
-        if !request.tools.is_empty() {
+        if !request.tools.is_empty() && !matches!(request.tool_choice, ToolChoice::None) {
             let tools: Vec<Value> = request
                 .tools
                 .iter()
@@ -81,7 +82,7 @@ impl Provider for Anthropic {
             match &request.tool_choice {
                 ToolChoice::Auto => body["tool_choice"] = json!({"type": "auto"}),
                 ToolChoice::Required => body["tool_choice"] = json!({"type": "any"}),
-                ToolChoice::None => {} // omit tool_choice to let the model decide
+                ToolChoice::None => unreachable!(),
             }
         }
 
