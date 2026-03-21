@@ -1,0 +1,139 @@
+//! OpenVM prover integration via subprocess.
+//!
+//! Invokes the `strata-openvm-host` binary to serialize inputs in the correct
+//! OpenVM format, compile the guest, and generate a ZK proof.
+//!
+//! **Status:** Scaffold. The host binary validates inputs locally but does not
+//! yet produce real ZK proofs. Full integration requires OpenVM tooling installed.
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use crate::error::AgentError;
+use crate::pipeline::TransitionOutput;
+
+/// Default timeout for the prover subprocess (10 minutes).
+const PROVE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Monotonic counter for unique temp file names across concurrent tasks.
+static PROVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Proof aggregation level.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum ProofLevel {
+    /// Fast application-level proof (not on-chain verifiable).
+    #[default]
+    App,
+    /// Aggregated STARK proof.
+    Stark,
+    /// Halo2-wrapped proof, verifiable on-chain via EVM.
+    Evm,
+}
+
+impl ProofLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::App => "app",
+            Self::Stark => "stark",
+            Self::Evm => "evm",
+        }
+    }
+}
+
+/// Configuration for the OpenVM prover.
+#[derive(Clone, Debug)]
+pub struct ProverConfig {
+    /// Path to the `strata-openvm/` directory containing host + guest crates.
+    pub openvm_dir: PathBuf,
+    /// Proof aggregation level.
+    pub proof_level: ProofLevel,
+    /// Timeout for the prover subprocess.
+    pub timeout: Duration,
+}
+
+impl ProverConfig {
+    pub fn new(openvm_dir: PathBuf, proof_level: ProofLevel) -> Self {
+        Self {
+            openvm_dir,
+            proof_level,
+            timeout: PROVE_TIMEOUT,
+        }
+    }
+}
+
+/// Generate a ZK proof for a state transition.
+///
+/// Returns the raw proof bytes on success. The caller already has
+/// `public_values` from `TransitionOutput`.
+///
+/// Calls the `strata-openvm-host prove` subcommand which handles:
+/// 1. Serializing `CoreState`, nonce, and `Witness` in OpenVM's `StdIn` format
+/// 2. Compiling the guest (if needed)
+/// 3. Running the prover at the specified `ProofLevel`
+pub async fn prove(
+    config: &ProverConfig,
+    transition: &TransitionOutput,
+) -> Result<Vec<u8>, AgentError> {
+    // Serialize the pre-transition state, new nonce, and witness as JSON.
+    let input_json = serde_json::json!({
+        "state": transition.old_state,
+        "nonce": transition.record.input.nonce,
+        "witness": transition.witness,
+    });
+
+    let json_str =
+        serde_json::to_string(&input_json).map_err(|e| AgentError::Prover(e.to_string()))?;
+
+    // Write JSON to a unique temp file to avoid races under concurrent use.
+    let id = PROVE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let input_file = config
+        .openvm_dir
+        .join(format!(".prove-input-{id}.json"));
+    tokio::fs::write(&input_file, &json_str)
+        .await
+        .map_err(|e| AgentError::Prover(format!("failed to write input file: {e}")))?;
+
+    // Invoke the host binary with a timeout.
+    let result = tokio::time::timeout(
+        config.timeout,
+        tokio::process::Command::new("cargo")
+            .args([
+                "run",
+                "--release",
+                "--",
+                "prove",
+                "--input",
+                input_file.to_str().unwrap_or(".prove-input.json"),
+                "--level",
+                config.proof_level.as_str(),
+            ])
+            .current_dir(&config.openvm_dir)
+            .output(),
+    )
+    .await;
+
+    // Clean up temp file (best-effort).
+    let _ = tokio::fs::remove_file(&input_file).await;
+
+    let output = result
+        .map_err(|_| AgentError::Prover(format!("prover timed out after {:?}", config.timeout)))?
+        .map_err(|e| AgentError::Prover(format!("failed to spawn prover: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AgentError::Prover(format!("prover failed: {stderr}")));
+    }
+
+    // Read proof output. The host binary writes the proof to
+    // `<openvm_dir>/<name>.<level>.proof`.
+    let proof_path = config
+        .openvm_dir
+        .join(format!("strata-openvm-guest.{}.proof", config.proof_level.as_str()));
+
+    let proof_bytes = tokio::fs::read(&proof_path)
+        .await
+        .map_err(|e| AgentError::Prover(format!("failed to read proof file: {e}")))?;
+
+    Ok(proof_bytes)
+}

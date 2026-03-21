@@ -25,6 +25,7 @@ pub struct TransitionOutput {
     pub record: TransitionRecord,
     pub witness: Witness,
     pub public_values: [u8; 104],
+    pub old_state: CoreState,
     pub new_state: CoreState,
 }
 
@@ -119,6 +120,7 @@ pub fn finalize<E: RStorage + Clock + Metrics>(
         record,
         witness,
         public_values,
+        old_state: snap.state,
         new_state,
     })
 }

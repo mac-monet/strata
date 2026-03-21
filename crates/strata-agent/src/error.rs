@@ -19,4 +19,10 @@ pub enum AgentError {
 
     #[error("pipeline error: {0}")]
     Pipeline(String),
+
+    #[error("prover error: {0}")]
+    Prover(String),
+
+    #[error("poster error: {0}")]
+    Poster(String),
 }

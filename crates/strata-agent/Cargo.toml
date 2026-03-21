@@ -9,9 +9,11 @@ local-embed = ["dep:tract-onnx", "dep:tokenizers"]
 
 [dependencies]
 strata-core = { path = "../strata-core", features = ["std", "serde"] }
-strata-proof = { path = "../strata-proof", features = ["std"] }
+strata-proof = { path = "../strata-proof", features = ["std", "serde"] }
 strata-vector-db = { path = "../vector-db" }
 
+alloy = { version = "1", features = ["provider-http", "signers", "signer-local", "contract", "sol-types", "consensus", "node-bindings"] }
+commonware-codec = "2026.3.0"
 commonware-runtime = "2026.3.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
