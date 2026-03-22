@@ -3,6 +3,9 @@
 .cachebro/
 .cx-index.db
 
+# Local model weights
+models/
+
 # OpenVM prover outputs
 strata-openvm/*.proof
 strata-openvm/*.proof.json

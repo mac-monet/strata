@@ -3,10 +3,9 @@ pragma solidity ^0.8.28;
 
 /// @title StrataRollup
 /// @notice Rollup contract for a single Strata agent. Stores the latest proven
-///         state root and accepts ZK-proven state transitions.
-///
-///         The verifier interface will be replaced with the real OpenVM Halo2
-///         verifier once the proving pipeline is integrated.
+///         state root and accepts operator-signed state transitions.
+///         Verification is off-chain via STARK proofs; on-chain ZK verification
+///         can be added by overriding `_verify` in a derived contract.
 contract StrataRollup {
     /// @notice Current MMR root of the agent's vector index.
     bytes32 public stateRoot;
@@ -20,15 +19,6 @@ contract StrataRollup {
     /// @notice Address authorized to submit transitions.
     address public operator;
 
-    /// @notice Address of the ZK verifier contract (OpenVM Halo2).
-    address public verifier;
-
-    /// @notice Commitment to the guest executable (app_exe_commit).
-    bytes32 public appExeCommit;
-
-    /// @notice Commitment to the VM configuration (app_vm_commit).
-    bytes32 public appVmCommit;
-
     /// @notice Emitted on every successful state transition.
     event StateTransition(
         uint64 indexed newNonce,
@@ -38,21 +28,14 @@ contract StrataRollup {
     error OnlyOperator();
     error InvalidPublicValues();
     error StateMismatch();
-    error VerificationFailed();
 
     constructor(
         string memory _soulText,
-        address _verifier,
         address _operator,
-        bytes32 _appExeCommit,
-        bytes32 _appVmCommit,
         bytes32 _initialStateRoot
     ) {
         soulHash = keccak256(bytes(_soulText));
-        verifier = _verifier;
         operator = _operator;
-        appExeCommit = _appExeCommit;
-        appVmCommit = _appVmCommit;
         stateRoot = _initialStateRoot;
     }
 
@@ -96,26 +79,13 @@ contract StrataRollup {
         emit StateTransition(nonce, newRoot);
     }
 
-    /// @dev Internal verification hook. Override in tests with a mock.
+    /// @dev Verification hook — no-op for now. Override in a derived contract
+    ///      (e.g. VerifiedStrataRollup) to add on-chain ZK proof verification
+    ///      via OpenVM Halo2 or a proving network.
     function _verify(
-        bytes calldata publicValues,
-        bytes calldata proofData
+        bytes calldata, /* publicValues */
+        bytes calldata  /* proofData */
     ) internal view virtual {
-        if (verifier == address(0)) revert VerificationFailed();
-
-        (bool success, bytes memory returnData) = verifier.staticcall(
-            abi.encodeWithSignature(
-                "verify(bytes,bytes,bytes32,bytes32)",
-                publicValues,
-                proofData,
-                appExeCommit,
-                appVmCommit
-            )
-        );
-        if (!success) revert VerificationFailed();
-        if (returnData.length >= 32) {
-            bool verified = abi.decode(returnData, (bool));
-            if (!verified) revert VerificationFailed();
-        }
+        // Intentionally empty — verification is off-chain via STARK proofs.
     }
 }

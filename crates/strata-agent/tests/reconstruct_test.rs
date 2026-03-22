@@ -17,11 +17,10 @@ use strata_agent::pipeline;
 use strata_agent::poster::PosterConfig;
 use strata_agent::reconstruct;
 
-// Use the MockStrataRollup which skips ZK verification.
 sol! {
     #[sol(rpc, all_derives)]
-    MockStrataRollup,
-    "../../contracts/out/StrataRollup.t.sol/MockStrataRollup.json"
+    StrataRollup,
+    "../../contracts/out/StrataRollup.sol/StrataRollup.json"
 }
 
 fn make_entry(id: u64, text: &[u8]) -> MemoryEntry {
@@ -74,14 +73,14 @@ async fn reconstruct_matches_posted_state() {
         (transitions, contents)
     });
 
-    // Deploy MockStrataRollup with the genesis root
+    // Deploy StrataRollup with the genesis root
     let genesis_root = FixedBytes::from(*transitions[0].old_state.vector_index_root.as_bytes());
     let wallet = EthereumWallet::from(signer.clone());
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
         .connect_http(rpc_url.parse().unwrap());
 
-    let contract = MockStrataRollup::deploy(
+    let contract = StrataRollup::deploy(
         &provider,
         soul_text.to_string(),
         operator,
@@ -182,7 +181,7 @@ async fn reconstruct_zero_transitions() {
         .wallet(wallet)
         .connect_http(rpc_url.parse().unwrap());
 
-    let contract = MockStrataRollup::deploy(
+    let contract = StrataRollup::deploy(
         &provider,
         soul_text.to_string(),
         operator,

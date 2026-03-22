@@ -1,7 +1,7 @@
 //! End-to-end integration tests: deploy → interact → verify on-chain → reconstruct.
 //!
-//! Uses `MockStrataRollup` (skips ZK verification) and a deterministic embedder
-//! so no API keys are needed.
+//! Uses a deterministic embedder so no API keys are needed.
+//! The `local_embedder_*` tests use the real ONNX model (requires `local-embed` feature + model files).
 
 mod common;
 
@@ -154,7 +154,7 @@ fn e2e_deploy_interact_post_reconstruct() {
     // Deploy + post + verify in a tokio runtime (needs network for Anvil)
     cw_tokio::Runner::default().start(|_ctx| async move {
         let contract_address =
-            poster::deploy_mock_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
+            poster::deploy_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
                 .await
                 .expect("deploy failed");
 
@@ -214,7 +214,7 @@ fn server_posts_transition_on_interaction() {
 
         // Deploy mock contract
         let contract_address =
-            poster::deploy_mock_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
+            poster::deploy_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
                 .await
                 .expect("deploy failed");
 
@@ -281,7 +281,7 @@ fn server_posts_two_transitions_sequentially() {
         let genesis_root = FixedBytes::from(*genesis.vector_index_root.as_bytes());
 
         let contract_address =
-            poster::deploy_mock_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
+            poster::deploy_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
                 .await
                 .expect("deploy failed");
 
@@ -376,5 +376,105 @@ fn server_posts_two_transitions_sequentially() {
         let reconstructed = reconstruct::reconstruct(&poster_config).await.unwrap();
         assert_eq!(reconstructed.state.nonce, Nonce::new(2));
         assert_eq!(reconstructed.contents, vec!["fact one", "fact two"]);
+    });
+}
+
+// --- Local embedder e2e tests ---
+
+#[cfg(feature = "local-embed")]
+fn local_model_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models/embed")
+}
+
+#[cfg(feature = "local-embed")]
+fn has_local_model() -> bool {
+    let dir = local_model_dir();
+    dir.join("model.onnx").exists() && dir.join("tokenizer.json").exists()
+}
+
+/// E2e with local ONNX embedder: remember three facts, recall by semantic query,
+/// verify the closest match is returned.
+#[cfg(feature = "local-embed")]
+#[test]
+fn local_embedder_remember_and_recall() {
+    use strata_agent::embed::LocalEmbedder;
+
+    if !has_local_model() {
+        eprintln!("skipping: model files not found in models/embed/");
+        return;
+    }
+
+    let anvil = Anvil::new().try_spawn().expect("failed to spawn anvil");
+    let rpc_url = anvil.endpoint();
+    let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+
+    let soul_text = "test-soul";
+    let genesis = common::genesis_state();
+    let genesis_root = FixedBytes::from(*genesis.vector_index_root.as_bytes());
+
+    cw_tokio::Runner::default().start(|ctx| async move {
+        let db_config = common::make_config("local-embed-e2e", &ctx);
+        let db = VectorDB::new(ctx, db_config).await.unwrap();
+
+        let embedder = LocalEmbedder::mixedbread(local_model_dir())
+            .expect("failed to load local model");
+        let mut executor = ToolExecutor::new(db, Box::new(embedder));
+        let snap = pipeline::snapshot(genesis, executor.db());
+
+        // Remember three semantically distinct facts
+        executor.execute("remember", &json!({"text": "The capital of France is Paris"}))
+            .await.expect("remember 1 failed");
+        executor.execute("remember", &json!({"text": "Rust is a systems programming language"}))
+            .await.expect("remember 2 failed");
+        executor.execute("remember", &json!({"text": "Water boils at 100 degrees Celsius"}))
+            .await.expect("remember 3 failed");
+
+        // Recall with a semantically related query
+        let result = executor.execute("recall", &json!({"query": "What is the boiling point of water?"}))
+            .await.expect("recall failed");
+
+        // The recall result should contain the water/boiling fact
+        assert!(
+            result.content.contains("100 degrees") || result.content.contains("boils"),
+            "recall should find the water fact, got: {}",
+            result.content
+        );
+
+        // Finalize and post on-chain
+        let transition = pipeline::finalize(&snap, executor.db(), executor.contents())
+            .expect("finalize failed");
+        assert_eq!(transition.new_state.nonce, Nonce::new(1));
+
+        let contract_address =
+            poster::deploy_contract(&rpc_url, signer.clone(), soul_text, genesis_root)
+                .await.expect("deploy failed");
+
+        let poster_config = PosterConfig {
+            rpc_url: rpc_url.clone(),
+            contract_address,
+        };
+
+        let nonce = transition.new_state.nonce.get();
+        let pv = pipeline::batch_public_values(
+            transition.old_state.vector_index_root.as_bytes(),
+            transition.new_state.vector_index_root.as_bytes(),
+            nonce, nonce,
+            transition.new_state.soul_hash.as_bytes(),
+        );
+
+        poster::post_batch(&poster_config, signer.clone(), vec![], pv, std::slice::from_ref(&transition))
+            .await.expect("post failed");
+
+        assert_eq!(poster::read_nonce(&poster_config).await.unwrap(), 1);
+
+        // Reconstruct and verify all three facts
+        let reconstructed = reconstruct::reconstruct(&poster_config).await.expect("reconstruction failed");
+        assert_eq!(reconstructed.state.nonce, Nonce::new(1));
+        assert_eq!(reconstructed.contents.len(), 3);
+        assert!(reconstructed.contents.iter().any(|c| c.contains("Paris")));
+        assert!(reconstructed.contents.iter().any(|c| c.contains("Rust")));
+        assert!(reconstructed.contents.iter().any(|c| c.contains("100 degrees")));
+
+        executor.into_db().destroy().await.unwrap();
     });
 }

@@ -1,6 +1,8 @@
 //! Tests for the public embedding API.
 
 use strata_agent::embed::{Threshold, binarize};
+#[cfg(feature = "local-embed")]
+use strata_agent::embed::{Embedder, LocalEmbedder};
 use strata_core::EMBEDDING_WORDS;
 
 #[test]
@@ -58,4 +60,69 @@ fn binarize_empty() {
         binarize(&[], Threshold::Median),
         strata_core::BinaryEmbedding::default()
     );
+}
+
+// --- Local ONNX embedder tests (require model files + local-embed feature) ---
+
+#[cfg(feature = "local-embed")]
+fn model_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../models/embed")
+}
+
+#[cfg(feature = "local-embed")]
+fn has_model() -> bool {
+    let dir = model_dir();
+    dir.join("model.onnx").exists() && dir.join("tokenizer.json").exists()
+}
+
+#[cfg(feature = "local-embed")]
+#[tokio::test]
+async fn local_embedder_loads_and_produces_output() {
+    if !has_model() {
+        eprintln!("skipping: model files not found in models/embed/");
+        return;
+    }
+
+    let embedder = LocalEmbedder::mixedbread(model_dir()).expect("failed to load model");
+    let emb = embedder.embed("Hello, world!").await.expect("embed failed");
+
+    // Should produce a non-zero embedding.
+    let words = emb.as_words();
+    let set_bits: u32 = words.iter().map(|w| w.count_ones()).sum();
+    assert!(set_bits > 0, "embedding is all zeros");
+    assert!(set_bits < 1024, "embedding is all ones");
+}
+
+#[cfg(feature = "local-embed")]
+#[tokio::test]
+async fn local_embedder_similar_texts_are_closer() {
+    if !has_model() {
+        eprintln!("skipping: model files not found in models/embed/");
+        return;
+    }
+
+    let embedder = LocalEmbedder::mixedbread(model_dir()).expect("failed to load model");
+
+    let cat1 = embedder.embed("The cat sat on the mat").await.unwrap();
+    let cat2 = embedder.embed("A cat was sitting on a mat").await.unwrap();
+    let unrelated = embedder.embed("Quantum computing uses qubits for parallel computation").await.unwrap();
+
+    // Hamming distance: lower = more similar.
+    let dist_similar = hamming(&cat1, &cat2);
+    let dist_different = hamming(&cat1, &unrelated);
+
+    assert!(
+        dist_similar < dist_different,
+        "similar texts should have lower hamming distance: similar={dist_similar}, different={dist_different}"
+    );
+}
+
+#[cfg(feature = "local-embed")]
+fn hamming(a: &strata_core::BinaryEmbedding, b: &strata_core::BinaryEmbedding) -> u32 {
+    a.as_words()
+        .iter()
+        .zip(b.as_words().iter())
+        .map(|(x, y)| (x ^ y).count_ones())
+        .sum()
 }

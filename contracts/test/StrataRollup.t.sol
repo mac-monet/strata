@@ -4,34 +4,8 @@ pragma solidity ^0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {StrataRollup} from "../src/StrataRollup.sol";
 
-/// @dev Test harness that bypasses ZK verification.
-contract MockStrataRollup is StrataRollup {
-    constructor(
-        string memory _soulText,
-        address _operator,
-        bytes32 _initialStateRoot
-    )
-        StrataRollup(
-            _soulText,
-            address(0), // no verifier needed for mock
-            _operator,
-            bytes32(0),
-            bytes32(0),
-            _initialStateRoot
-        )
-    {}
-
-    /// @dev Always succeeds — skips ZK verification.
-    function _verify(
-        bytes calldata,
-        bytes calldata
-    ) internal pure override {
-        // no-op: mock always passes
-    }
-}
-
 contract StrataRollupTest is Test {
-    MockStrataRollup public rollup;
+    StrataRollup public rollup;
     address public operator = address(0xBEEF);
     bytes32 public initialRoot = bytes32(uint256(0x1234));
     string public soulText = "You are a helpful assistant.";
@@ -39,7 +13,7 @@ contract StrataRollupTest is Test {
     event StateTransition(uint64 indexed newNonce, bytes32 indexed newStateRoot);
 
     function setUp() public {
-        rollup = new MockStrataRollup(
+        rollup = new StrataRollup(
             soulText,
             operator,
             initialRoot

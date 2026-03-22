@@ -40,10 +40,10 @@ impl LocalEmbedder {
         model_path: impl AsRef<Path>,
         tokenizer_path: impl AsRef<Path>,
     ) -> Result<Self, AgentError> {
-        let plan = load_plan(model_path.as_ref())?;
+        let (plan, num_inputs, symbols) = load_plan(model_path.as_ref())?;
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| AgentError::Embed(e.to_string()))?;
-        Ok(Self::spawn(plan, tokenizer, Threshold::Zero))
+        Ok(Self::spawn(plan, num_inputs, tokenizer, Threshold::Zero, symbols))
     }
 
     /// Create with mixedbread mxbai-embed-large-v1 defaults (zero threshold).
@@ -62,14 +62,16 @@ impl LocalEmbedder {
     }
 
     /// Spawn the background inference thread and return a handle.
-    fn spawn(plan: Plan, tokenizer: Tokenizer, threshold: Threshold) -> Self {
+    fn spawn(plan: Plan, num_inputs: usize, tokenizer: Tokenizer, threshold: Threshold, symbols: SymbolScope) -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel::<EmbedRequest>();
 
         std::thread::Builder::new()
             .name("local-embedder".into())
             .spawn(move || {
+                // Keep the symbol scope alive for the lifetime of the plan.
+                let _symbols = symbols;
                 while let Some(req) = rx.blocking_recv() {
-                    let result = embed_sync(&plan, &tokenizer, threshold, &req.text);
+                    let result = embed_sync(&plan, num_inputs, &tokenizer, threshold, &req.text);
                     let _ = req.tx.send(result);
                 }
             })
@@ -101,36 +103,46 @@ impl Embedder for LocalEmbedder {
     }
 }
 
-fn load_plan(model_path: &Path) -> Result<Plan, AgentError> {
+fn load_plan(model_path: &Path) -> Result<(Plan, usize, SymbolScope), AgentError> {
     let symbols = SymbolScope::default();
     let s = symbols.sym("S");
 
-    tract_onnx::onnx()
+    let mut model = tract_onnx::onnx()
         .model_for_path(model_path)
-        .map_err(|e| AgentError::Embed(e.to_string()))?
-        .with_input_fact(
-            0,
-            InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
-        )
-        .map_err(|e| AgentError::Embed(e.to_string()))?
-        .with_input_fact(
-            1,
-            InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
-        )
-        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let n_inputs = model.input_outlets().map_err(|e| AgentError::Embed(e.to_string()))?.len();
+
+    for i in 0..n_inputs {
+        model = model
+            .with_input_fact(
+                i,
+                InferenceFact::dt_shape(i64::datum_type(), [1.to_dim(), s.to_dim()]),
+            )
+            .map_err(|e| AgentError::Embed(e.to_string()))?;
+    }
+
+    let optimized = model
         .into_optimized()
-        .map_err(|e| AgentError::Embed(e.to_string()))?
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    let plan_inputs = optimized.input_outlets().map_err(|e| AgentError::Embed(e.to_string()))?.len();
+
+    let plan = optimized
         .into_runnable()
-        .map_err(|e| AgentError::Embed(e.to_string()))
+        .map_err(|e| AgentError::Embed(e.to_string()))?;
+
+    Ok((plan, plan_inputs, symbols))
 }
 
 fn embed_sync(
     plan: &Plan,
+    num_inputs: usize,
     tokenizer: &Tokenizer,
     threshold: Threshold,
     text: &str,
 ) -> Result<BinaryEmbedding, AgentError> {
-        let encoding = tokenizer
+    let encoding = tokenizer
         .encode(text, true)
         .map_err(|e| AgentError::Embed(e.to_string()))?;
 
@@ -150,8 +162,14 @@ fn embed_sync(
     )
     .map_err(|e| AgentError::Embed(e.to_string()))?;
 
+    let mut inputs = tvec![input_ids.into_tvalue(), attention_mask.into_tvalue()];
+    if num_inputs >= 3 {
+        let token_type_ids = tract_ndarray::Array2::<i64>::zeros((1, seq_len));
+        inputs.push(token_type_ids.into_tvalue());
+    }
+
     let outputs = plan
-        .run(tvec![input_ids.into_tvalue(), attention_mask.into_tvalue()])
+        .run(inputs)
         .map_err(|e| AgentError::Embed(e.to_string()))?;
 
     let output = outputs[0]

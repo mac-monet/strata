@@ -58,9 +58,6 @@ async fn deploy_to_anvil() {
         &rpc_url,
         signer.clone(),
         "test soul",
-        Address::ZERO,
-        FixedBytes::ZERO,
-        FixedBytes::ZERO,
         initial_root,
     )
     .await

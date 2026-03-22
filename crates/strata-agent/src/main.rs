@@ -13,7 +13,7 @@ use alloy::primitives::{Address, FixedBytes};
 use alloy::signers::local::PrivateKeySigner;
 use strata_agent::agent::AgentConfig;
 use strata_agent::batch::{self, BatchConfig, PendingBatch};
-use strata_agent::embed::ApiEmbedder;
+use strata_agent::embed::{self, ApiEmbedder};
 use strata_agent::identity::{self, IdentityConfig};
 use strata_agent::llm::LlmClient;
 use strata_agent::poster::{self, PosterConfig};
@@ -111,13 +111,13 @@ fn main() {
                 reconstructed.state.nonce.get()
             );
 
-            let executor = ToolExecutor::new(db, Box::new(embedder))
+            let executor = ToolExecutor::new(db, embedder)
                 .with_contents(reconstructed.contents)
                 .expect("contents mismatch");
             (reconstructed.state, executor)
         } else {
             let genesis = genesis_state(&soul);
-            let executor = ToolExecutor::new(db, Box::new(embedder));
+            let executor = ToolExecutor::new(db, embedder);
             (genesis, executor)
         };
 
@@ -132,9 +132,9 @@ fn main() {
             } else {
                 let genesis_root =
                     FixedBytes::from(*agent_state.vector_index_root.as_bytes());
-                poster::deploy_mock_contract(&rpc_url, signer.clone(), &soul, genesis_root)
+                poster::deploy_contract(&rpc_url, signer.clone(), &soul, genesis_root)
                     .await
-                    .expect("mock deploy failed")
+                    .expect("contract deploy failed")
             };
 
             eprintln!("posting to contract {contract_address}");
@@ -311,8 +311,29 @@ fn make_llm_client() -> LlmClient {
 }
 
 /// Build the embedding client from environment variables.
-fn make_embedder() -> ApiEmbedder {
+///
+/// Priority: local model (EMBED_MODEL_DIR or default ./models/embed) → API embedders.
+fn make_embedder() -> Box<dyn embed::Embedder> {
     let env = |k: &str| std::env::var(k).ok();
+
+    // Try local embedder first (no API key needed).
+    #[cfg(feature = "local-embed")]
+    {
+        let model_dir = env("EMBED_MODEL_DIR")
+            .unwrap_or_else(|| "./models/embed".into());
+        let dir = std::path::Path::new(&model_dir);
+        if dir.join("model.onnx").exists() && dir.join("tokenizer.json").exists() {
+            match embed::LocalEmbedder::mixedbread(&model_dir) {
+                Ok(e) => {
+                    eprintln!("embed: local ({})", model_dir);
+                    return Box::new(e);
+                }
+                Err(e) => {
+                    eprintln!("embed: local model failed to load: {e}, falling back to API");
+                }
+            }
+        }
+    }
 
     if let Some(base_url) = env("EMBED_BASE_URL") {
         let api_key = env("EMBED_API_KEY")
@@ -324,7 +345,7 @@ fn make_embedder() -> ApiEmbedder {
             e = e.with_model(model);
         }
         eprintln!("embed: custom endpoint");
-        return e;
+        return Box::new(e);
     }
 
     if let Some(key) = env("OPENAI_API_KEY") {
@@ -333,7 +354,7 @@ fn make_embedder() -> ApiEmbedder {
             e = e.with_model(model);
         }
         eprintln!("embed: openai");
-        return e;
+        return Box::new(e);
     }
 
     if let Some(key) = env("VENICE_API_KEY") {
@@ -342,10 +363,10 @@ fn make_embedder() -> ApiEmbedder {
             .with_url("https://api.venice.ai/api/v1/embeddings")
             .with_model(&model);
         eprintln!("embed: venice ({model})");
-        return e;
+        return Box::new(e);
     }
 
-    panic!("No embedding provider configured. Set one of: EMBED_BASE_URL+EMBED_API_KEY, OPENAI_API_KEY, or VENICE_API_KEY");
+    panic!("No embedding provider configured. Set EMBED_MODEL_DIR for local, or one of: EMBED_BASE_URL+EMBED_API_KEY, OPENAI_API_KEY, VENICE_API_KEY");
 }
 
 /// Best-effort .env file loader.
