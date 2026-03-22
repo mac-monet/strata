@@ -6,6 +6,7 @@ pub mod embed;
 pub mod error;
 pub mod identity;
 pub mod llm;
+pub mod persist;
 pub mod pipeline;
 pub mod poster;
 pub mod prover;

@@ -61,13 +61,18 @@ fn main() {
     let wal_path = std::env::var("WAL_PATH")
         .unwrap_or_else(|_| "./strata-batch.wal".into());
 
+    let snapshot_path = PathBuf::from(
+        std::env::var("SNAPSHOT_PATH").unwrap_or_else(|_| "./strata-snapshot.json".into()),
+    );
+
     tokio::Runner::default().start(|context| async move {
         let db_config = make_db_config(&context);
-        let mut db = VectorDB::new(context, db_config)
-            .await
-            .expect("failed to initialize VectorDB");
 
         let (agent_state, executor) = if reconstruct == Some(true) {
+            let mut db = VectorDB::new(context, db_config)
+                .await
+                .expect("failed to initialize VectorDB");
+
             let address: Address = contract_addr_env
                 .as_deref()
                 .expect("CONTRACT_ADDRESS required for reconstruction")
@@ -115,7 +120,44 @@ fn main() {
                 .with_contents(reconstructed.contents)
                 .expect("contents mismatch");
             (reconstructed.state, executor)
+        } else if let Some(snap) = strata_agent::persist::load(&snapshot_path)
+            .expect("failed to load snapshot")
+        {
+            // Restore from local snapshot: rebuild the MMR from entries.
+            let mut db = VectorDB::new(context, db_config)
+                .await
+                .expect("failed to initialize VectorDB for snapshot restore");
+
+            let local_soul_hash = strata_core::SoulHash::digest(soul.as_bytes());
+            assert_eq!(
+                local_soul_hash, snap.state.soul_hash,
+                "local soul text does not match snapshot soul hash"
+            );
+
+            db.batch_append(snap.entries)
+                .await
+                .expect("snapshot batch_append failed");
+
+            assert_eq!(
+                snap.state.vector_index_root,
+                db.root(),
+                "snapshot root does not match reconstructed MMR root"
+            );
+
+            eprintln!(
+                "restored from snapshot: {} entries, nonce {}",
+                db.len(),
+                snap.state.nonce.get()
+            );
+
+            let executor = ToolExecutor::new(db, embedder)
+                .with_contents(snap.contents)
+                .expect("snapshot contents mismatch");
+            (snap.state, executor)
         } else {
+            let db = VectorDB::new(context, db_config)
+                .await
+                .expect("failed to initialize VectorDB");
             let genesis = genesis_state(&soul);
             let executor = ToolExecutor::new(db, embedder);
             (genesis, executor)
@@ -205,15 +247,18 @@ fn main() {
         };
 
         // ERC-8004 identity (optional — only needed for on-chain registration).
-        let identity_config = match (
-            std::env::var("AGENT_ID"),
+        // AGENT_ID=0 or unset triggers auto-mint of a new identity.
+        let mut identity_config = match (
             std::env::var("REGISTRY_ADDRESS"),
             std::env::var("AGENT_BASE_URL"),
         ) {
-            (Ok(id), Ok(reg), Ok(url)) => {
-                let agent_id: u64 = id.parse().expect("AGENT_ID must be a number");
+            (Ok(reg), Ok(url)) => {
+                let agent_id: u64 = std::env::var("AGENT_ID")
+                    .ok()
+                    .and_then(|id| id.parse().ok())
+                    .unwrap_or(0);
                 let registry_address: Address = reg.parse().expect("invalid REGISTRY_ADDRESS");
-                eprintln!("identity: agent_id={agent_id}");
+                eprintln!("identity: agent_id={agent_id} (0 = will mint)");
                 IdentityConfig {
                     agent_id,
                     registry_address,
@@ -222,7 +267,7 @@ fn main() {
                 }
             }
             _ => {
-                eprintln!("identity: not configured (set AGENT_ID, REGISTRY_ADDRESS, AGENT_BASE_URL)");
+                eprintln!("identity: not configured (set REGISTRY_ADDRESS, AGENT_BASE_URL)");
                 IdentityConfig {
                     agent_id: 0,
                     registry_address: Address::ZERO,
@@ -238,11 +283,15 @@ fn main() {
             .unwrap_or(Address::ZERO);
 
         // Register on-chain identity (non-fatal, skipped if not configured).
-        if identity_config.agent_id > 0 {
+        // agent_id==0 with a configured registry triggers auto-mint.
+        if identity_config.registry_address != Address::ZERO {
             if let Ok(key_hex) = std::env::var("OPERATOR_KEY") {
                 let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
                 match identity::register(&identity_config, signer, rollup_address).await {
-                    Ok(()) => eprintln!("ERC-8004 identity registered"),
+                    Ok(id) => {
+                        identity_config.agent_id = id;
+                        eprintln!("ERC-8004 identity ready: agent #{id}");
+                    }
                     Err(e) => eprintln!("ERC-8004 registration failed (non-fatal): {e}"),
                 }
             }
@@ -264,6 +313,7 @@ fn main() {
             rollup_address,
         );
         app_state.proofs_dir = proofs_dir;
+        app_state.snapshot_path = Some(snapshot_path.clone());
         let state = Arc::new(app_state);
 
         eprintln!("agent ready — POST http://{addr}/a2a");
@@ -284,6 +334,23 @@ fn main() {
             // Give the batch task a moment to flush.
             ::tokio::time::sleep(Duration::from_secs(5)).await;
         }
+
+        // Save snapshot before exit.
+        let snap = state.snapshot().await;
+        match strata_agent::persist::save(&snapshot_path, &snap) {
+            Ok(()) => eprintln!(
+                "snapshot saved: {} entries → {}",
+                snap.entries.len(),
+                snapshot_path.display()
+            ),
+            Err(e) => eprintln!("WARNING: failed to save snapshot: {e}"),
+        }
+
+        // Sync MMR journal to disk.
+        if let Err(e) = state.sync_db().await {
+            eprintln!("WARNING: failed to sync VectorDB: {e}");
+        }
+
         server_handle.abort();
     });
 }

@@ -61,6 +61,9 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     pub(crate) identity: IdentityConfig,
     pub(crate) rollup_address: Address,
     pub proofs_dir: PathBuf,
+    /// Path for persistence snapshots. If set, the agent saves state after
+    /// each transition and on shutdown.
+    pub snapshot_path: Option<PathBuf>,
     pub(crate) sessions: tokio::sync::Mutex<HashMap<String, TaskSession>>,
 }
 
@@ -82,8 +85,26 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
             identity,
             rollup_address,
             proofs_dir: PathBuf::from("proofs"),
+            snapshot_path: None,
             sessions: tokio::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Build a persistence snapshot from current state.
+    pub async fn snapshot(&self) -> crate::persist::Snapshot {
+        let config = self.config.lock().await;
+        let executor = self.executor.lock().await;
+        crate::persist::Snapshot {
+            state: config.state,
+            entries: executor.db().entries().to_vec(),
+            contents: executor.contents().to_vec(),
+        }
+    }
+
+    /// Sync the VectorDB's MMR journal to disk.
+    pub async fn sync_db(&self) -> Result<(), strata_vector_db::VectorDbError> {
+        let executor = self.executor.lock().await;
+        executor.db().sync().await
     }
 }
 
@@ -373,6 +394,18 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
             if let Some(transition) = result.transition {
                 let nonce = transition.new_state.nonce.get();
                 eprintln!("transition nonce={nonce} buffered for batch");
+
+                // Save snapshot to disk (while locks are still held).
+                if let Some(ref path) = state.snapshot_path {
+                    let snap = crate::persist::Snapshot {
+                        state: config.state,
+                        entries: executor.db().entries().to_vec(),
+                        contents: executor.contents().to_vec(),
+                    };
+                    if let Err(e) = crate::persist::save(path, &snap) {
+                        eprintln!("warning: failed to save snapshot: {e}");
+                    }
+                }
 
                 // Persist proof to disk.
                 if let Err(e) = save_proof(&state.proofs_dir, &transition) {

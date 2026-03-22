@@ -162,6 +162,11 @@ impl<E: RStorage + Clock + Metrics> VectorDB<E> {
             .collect()
     }
 
+    /// All entries in the index, for snapshotting.
+    pub fn entries(&self) -> &[MemoryEntry] {
+        &self.index
+    }
+
     /// Number of entries in the index.
     pub fn len(&self) -> u64 {
         self.index.len() as u64

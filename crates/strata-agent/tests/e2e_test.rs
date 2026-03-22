@@ -379,6 +379,90 @@ fn server_posts_two_transitions_sequentially() {
     });
 }
 
+/// Snapshot persistence e2e: interact → snapshot saved to disk → restore from
+/// snapshot into a fresh VectorDB → verify state, entries, and contents match.
+#[test]
+fn snapshot_save_and_restore() {
+    let soul_text = "test-soul";
+
+    cw_tokio::Runner::default().start(|ctx| async move {
+        let genesis = common::genesis_state();
+        let snap_dir = tempfile::tempdir().unwrap();
+        let snap_path = snap_dir.path().join("snapshot.json");
+
+        // Phase 1: interact via HTTP with snapshot_path set, so the handler
+        // auto-saves a snapshot after the transition.
+        let db_config = common::make_config("snap-save", &ctx);
+        let db = VectorDB::new(ctx.clone(), db_config).await.unwrap();
+
+        let client = mock_remember_client("snapshot fact");
+        let pending: Arc<PendingBatch> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+        let mut app_state = AppState::new(
+            AgentConfig {
+                soul: soul_text.into(),
+                state: genesis,
+            },
+            client,
+            ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
+            Some(pending.clone()),
+            test_identity(),
+            alloy::primitives::Address::ZERO,
+        );
+        app_state.proofs_dir = tempfile::tempdir().unwrap().into_path();
+        app_state.snapshot_path = Some(snap_path.clone());
+        let state = Arc::new(app_state);
+
+        let app = server::router(state.clone());
+        let resp = app.oneshot(a2a_request("Remember: snapshot fact")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let rpc: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(rpc["error"].is_null(), "unexpected error: {}", rpc["error"]);
+
+        // Snapshot file should exist now.
+        assert!(snap_path.exists(), "snapshot was not saved after transition");
+
+        // Capture the post-transition state for comparison via the public snapshot method.
+        let expected_snap = state.snapshot().await;
+
+        // Phase 2: load the snapshot and open a fresh VectorDB from it.
+        let loaded = strata_agent::persist::load(&snap_path)
+            .expect("failed to load snapshot")
+            .expect("snapshot file should exist");
+
+        assert_eq!(loaded.state.nonce, expected_snap.state.nonce);
+        assert_eq!(loaded.state.soul_hash, expected_snap.state.soul_hash);
+        assert_eq!(loaded.state.vector_index_root, expected_snap.state.vector_index_root);
+        assert_eq!(loaded.contents, expected_snap.contents);
+        assert_eq!(loaded.entries.len(), expected_snap.entries.len());
+
+        // Rebuild a fresh VectorDB from snapshot entries via batch_append.
+        let db_config2 = common::make_config("snap-restore", &ctx);
+        let mut db2 = VectorDB::new(ctx, db_config2).await
+            .expect("VectorDB::new for restore failed");
+        db2.batch_append(loaded.entries.clone()).await
+            .expect("batch_append from snapshot failed");
+
+        assert_eq!(db2.root(), expected_snap.state.vector_index_root);
+        assert_eq!(db2.len(), expected_snap.entries.len() as u64);
+
+        // Verify recall works on the restored DB.
+        let mut executor2 = ToolExecutor::new(db2, Box::new(common::FixedEmbedder))
+            .with_contents(loaded.contents)
+            .expect("contents mismatch on restore");
+        let result = executor2
+            .execute("recall", &json!({"query": "snapshot"}))
+            .await
+            .expect("recall on restored DB failed");
+        assert!(
+            result.content.contains("snapshot fact"),
+            "restored DB should contain the remembered fact, got: {}",
+            result.content
+        );
+    });
+}
+
 // --- Local embedder e2e tests ---
 
 #[cfg(feature = "local-embed")]
