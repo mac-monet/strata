@@ -87,6 +87,14 @@ async fn flush(
         "batch: flushing {count} transitions (nonce {start_nonce}..{end_nonce})"
     );
 
+    // Write to WAL *before* proving so transitions survive a crash.
+    if let Err(e) = write_wal(wal_path, &batch).await {
+        eprintln!("batch: WAL write failed: {e}");
+        // Put back and retry next tick — don't proceed without WAL safety.
+        pending.lock().await.splice(0..0, batch);
+        return;
+    }
+
     // Generate proof (if prover configured).
     if let Some(prover_config) = prover {
         match prover::prove_batch(prover_config, &batch).await {
@@ -95,7 +103,7 @@ async fn flush(
             }
             Err(e) => {
                 eprintln!("batch: proof generation failed: {e}");
-                // Put transitions back so they're retried next tick.
+                // Transitions are safe in the WAL; put back for retry.
                 pending.lock().await.splice(0..0, batch);
                 return;
             }
@@ -122,10 +130,7 @@ async fn flush(
         }
         Err(e) => {
             eprintln!("batch: posting failed: {e}");
-            // Persist to WAL and put back for retry.
-            if let Err(we) = append_wal(wal_path, &batch).await {
-                eprintln!("batch: WAL write failed: {we}");
-            }
+            // Transitions are safe in the WAL; put back for retry.
             pending.lock().await.splice(0..0, batch);
         }
     }
@@ -169,13 +174,16 @@ async fn post_with_retry(
 
 // --- Write-ahead log ---
 
-/// Append transitions to the WAL as newline-delimited JSON.
-async fn append_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Result<(), String> {
+/// Write transitions to the WAL, replacing any previous contents.
+/// Called once after draining the pending buffer so the WAL always
+/// reflects exactly the in-flight batch (no duplicates on retry).
+async fn write_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(true)
         .open(path)
         .await
         .map_err(|e| format!("open WAL: {e}"))?;
