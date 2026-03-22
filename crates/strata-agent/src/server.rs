@@ -2,6 +2,7 @@
 //!
 //! Implements the minimal A2A subset: `message/send` (synchronous) and the Agent Card endpoint.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -38,6 +39,14 @@ const PARSE_ERROR: i32 = -32700;
 const INVALID_REQUEST: i32 = -32600;
 const METHOD_NOT_FOUND: i32 = -32601;
 const INTERNAL_ERROR: i32 = -32603;
+const TASK_NOT_FOUND: i32 = -32001;
+
+// --- Session storage ---
+
+pub(crate) struct TaskSession {
+    history: Vec<llm::Message>,
+    last_task: A2aTask,
+}
 
 // --- Shared state ---
 
@@ -52,6 +61,7 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     pub(crate) identity: IdentityConfig,
     pub(crate) rollup_address: Address,
     pub proofs_dir: PathBuf,
+    pub(crate) sessions: tokio::sync::Mutex<HashMap<String, TaskSession>>,
 }
 
 impl<E: RStorage + Clock + Metrics> AppState<E> {
@@ -72,6 +82,7 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
             identity,
             rollup_address,
             proofs_dir: PathBuf::from("proofs"),
+            sessions: tokio::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -138,11 +149,14 @@ fn rpc_error(
 // --- A2A message types ---
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SendMessageParams {
     message: A2aMessage,
+    #[serde(default)]
+    task_id: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct A2aMessage {
     message_id: String,
@@ -150,24 +164,29 @@ struct A2aMessage {
     parts: Vec<A2aPart>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct A2aPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct A2aTask {
     id: String,
     status: A2aTaskStatus,
 }
 
-#[derive(Serialize)]
-struct A2aTaskStatus {
+#[derive(Clone, Serialize)]
+pub(crate) struct A2aTaskStatus {
     state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<A2aMessage>,
+}
+
+#[derive(Deserialize)]
+struct TaskGetParams {
+    id: String,
 }
 
 // --- Handlers ---
@@ -285,6 +304,7 @@ async fn handle_a2a<E: RStorage + Clock + Metrics + 'static>(
 
     match rpc.method.as_str() {
         "message/send" => handle_message_send(state, rpc.id, rpc.params).await,
+        "tasks/get" => handle_tasks_get(state, rpc.id, rpc.params).await,
         _ => rpc_error(
             StatusCode::OK,
             rpc.id,
@@ -328,18 +348,34 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
         );
     }
 
-    let messages = vec![llm::Message::user_text(&text)];
+    // Resolve or create a task/session ID.
+    let task_id = send_params
+        .task_id
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    // Load existing history from the session, or start fresh.
+    let mut history = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(&task_id)
+            .map(|s| s.history.clone())
+            .unwrap_or_default()
+    };
+
+    // Append the new user message.
+    history.push(llm::Message::user_text(&text));
+
     let mut config = state.config.lock().await;
     let mut executor = state.executor.lock().await;
 
-    match agent::interact(&mut config, &state.client, &mut executor, &messages).await {
+    match agent::interact(&mut config, &state.client, &mut executor, &history).await {
         Ok(result) => {
             if let Some(transition) = result.transition {
                 let nonce = transition.new_state.nonce.get();
                 eprintln!("transition nonce={nonce} buffered for batch");
 
                 // Persist proof to disk.
-                if let Err(e) = save_proof(&state.proofs_dir, &transition).await {
+                if let Err(e) = save_proof(&state.proofs_dir, &transition) {
                     eprintln!("warning: failed to save proof for nonce {nonce}: {e}");
                 }
 
@@ -352,8 +388,11 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
                 }
             }
 
+            // Append the interaction trail to session history.
+            history.extend(result.trail);
+
             let task = A2aTask {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: task_id.clone(),
                 status: A2aTaskStatus {
                     state: "completed",
                     message: Some(A2aMessage {
@@ -365,6 +404,15 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
                     }),
                 },
             };
+
+            // Store session.
+            state.sessions.lock().await.insert(
+                task_id,
+                TaskSession {
+                    history,
+                    last_task: task.clone(),
+                },
+            );
 
             match serde_json::to_value(task) {
                 Ok(v) => (StatusCode::OK, Json(JsonRpcResponse::success(id, v))),
@@ -380,11 +428,47 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
     }
 }
 
+async fn handle_tasks_get<E: RStorage + Clock + Metrics>(
+    state: Arc<AppState<E>>,
+    id: serde_json::Value,
+    params: serde_json::Value,
+) -> (StatusCode, Json<JsonRpcResponse>) {
+    let get_params: TaskGetParams = match serde_json::from_value(params) {
+        Ok(p) => p,
+        Err(e) => {
+            return rpc_error(
+                StatusCode::BAD_REQUEST,
+                id,
+                INVALID_REQUEST,
+                format!("invalid params: {e}"),
+            );
+        }
+    };
+
+    let sessions = state.sessions.lock().await;
+    match sessions.get(&get_params.id) {
+        Some(session) => match serde_json::to_value(&session.last_task) {
+            Ok(v) => (StatusCode::OK, Json(JsonRpcResponse::success(id, v))),
+            Err(e) => rpc_error(
+                StatusCode::OK,
+                id,
+                INTERNAL_ERROR,
+                format!("failed to serialize task: {e}"),
+            ),
+        },
+        None => rpc_error(
+            StatusCode::OK,
+            id,
+            TASK_NOT_FOUND,
+            format!("task not found: {}", get_params.id),
+        ),
+    }
+}
+
 // --- Proof persistence ---
 
-async fn save_proof(dir: &std::path::Path, t: &TransitionOutput) -> Result<(), String> {
-    tokio::fs::create_dir_all(dir)
-        .await
+fn save_proof(dir: &std::path::Path, t: &TransitionOutput) -> Result<(), String> {
+    std::fs::create_dir_all(dir)
         .map_err(|e| format!("create proofs dir: {e}"))?;
 
     let nonce = t.new_state.nonce.get();
@@ -405,8 +489,7 @@ async fn save_proof(dir: &std::path::Path, t: &TransitionOutput) -> Result<(), S
 
     let path = dir.join(format!("{nonce}.json"));
     let bytes = serde_json::to_vec_pretty(&body).map_err(|e| format!("serialize: {e}"))?;
-    tokio::fs::write(&path, bytes)
-        .await
+    std::fs::write(&path, bytes)
         .map_err(|e| format!("write {}: {e}", path.display()))?;
 
     eprintln!("proof saved: {}", path.display());

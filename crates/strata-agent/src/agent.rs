@@ -28,6 +28,9 @@ pub struct InteractionResult {
     pub transition: Option<TransitionOutput>,
     /// Token usage for the interaction.
     pub usage: llm::Usage,
+    /// Messages generated during this interaction (assistant + tool results).
+    /// The caller can append these to a session history for multi-turn conversations.
+    pub trail: Vec<llm::Message>,
 }
 
 /// Run the agent loop: LLM conversation with tool execution.
@@ -69,6 +72,7 @@ pub async fn interact<E: RStorage + Clock + Metrics>(
         request.messages.push(msg.clone());
     }
 
+    let input_len = request.messages.len();
     let mut total_usage = llm::Usage::default();
     let mut rounds = 0usize;
 
@@ -90,10 +94,12 @@ pub async fn interact<E: RStorage + Clock + Metrics>(
                 } else {
                     None
                 };
+                let trail = request.messages.split_off(input_len);
                 return Ok(InteractionResult {
                     response: text,
                     transition,
                     usage: total_usage,
+                    trail,
                 });
             }
             StopReason::ToolUse => {

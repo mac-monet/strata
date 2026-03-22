@@ -39,11 +39,11 @@ impl GuestHasher for OpenVmKeccak {
 
 /// Reveal a byte slice as public values starting at the given u32-word index.
 ///
-/// Each 4-byte chunk is written as a LE u32 at the corresponding word position.
+/// Each 4-byte chunk is written as a BE u32 at the corresponding word position.
 /// The byte slice length must be a multiple of 4.
 fn reveal_bytes(data: &[u8], word_index: usize) {
     for (i, chunk) in data.chunks_exact(4).enumerate() {
-        let x = u32::from_le_bytes(chunk.try_into().unwrap());
+        let x = u32::from_be_bytes(chunk.try_into().unwrap());
         openvm::io::reveal_u32(x, word_index + i);
     }
 }
