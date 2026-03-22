@@ -4,6 +4,7 @@ pub mod agent;
 pub mod batch;
 pub mod embed;
 pub mod error;
+pub mod identity;
 pub mod llm;
 pub mod pipeline;
 pub mod poster;

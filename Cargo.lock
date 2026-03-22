@@ -5003,6 +5003,7 @@ dependencies = [
  "strata-core",
  "strata-proof",
  "strata-vector-db",
+ "tempfile",
  "thiserror 2.0.18",
  "tokenizers",
  "tokio",

@@ -31,4 +31,7 @@ pub enum AgentError {
 
     #[error("agent error: {0}")]
     Agent(String),
+
+    #[error("identity error: {0}")]
+    Identity(String),
 }

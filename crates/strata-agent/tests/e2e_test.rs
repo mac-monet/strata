@@ -19,6 +19,7 @@ use tower::ServiceExt;
 
 use strata_agent::agent::AgentConfig;
 use strata_agent::error::AgentError;
+use strata_agent::identity::IdentityConfig;
 use strata_agent::llm::{ChatResponse, ContentBlock, LlmClient, StopReason, Usage};
 use strata_agent::pipeline;
 use strata_agent::poster::{self, PosterConfig};
@@ -26,6 +27,15 @@ use strata_agent::reconstruct;
 use strata_agent::batch::PendingBatch;
 use strata_agent::server::{self, AppState};
 use strata_agent::tools::ToolExecutor;
+
+fn test_identity() -> IdentityConfig {
+    IdentityConfig {
+        agent_id: 1,
+        registry_address: alloy::primitives::Address::ZERO,
+        agent_base_url: "http://localhost:3000".into(),
+        rpc_url: String::new(),
+    }
+}
 
 // --- Helpers ---
 
@@ -220,7 +230,7 @@ fn server_posts_transition_on_interaction() {
         let client = mock_remember_client("roses are red");
         let pending: Arc<PendingBatch> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
-        let state = Arc::new(AppState::new(
+        let mut app_state = AppState::new(
             AgentConfig {
                 soul: soul_text.into(),
                 state: genesis,
@@ -228,7 +238,11 @@ fn server_posts_transition_on_interaction() {
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
             Some(pending.clone()),
-        ));
+            test_identity(),
+            alloy::primitives::Address::ZERO,
+        );
+        app_state.proofs_dir = tempfile::tempdir().unwrap().into_path();
+        let state = Arc::new(app_state);
 
         // Send message through the HTTP handler
         let app = server::router(state.clone());
@@ -320,7 +334,7 @@ fn server_posts_two_transitions_sequentially() {
 
         let pending: Arc<PendingBatch> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
-        let state = Arc::new(AppState::new(
+        let mut app_state = AppState::new(
             AgentConfig {
                 soul: soul_text.into(),
                 state: genesis,
@@ -328,7 +342,11 @@ fn server_posts_two_transitions_sequentially() {
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
             Some(pending.clone()),
-        ));
+            test_identity(),
+            alloy::primitives::Address::ZERO,
+        );
+        app_state.proofs_dir = tempfile::tempdir().unwrap().into_path();
+        let state = Arc::new(app_state);
 
         // First interaction
         let app = server::router(state.clone());

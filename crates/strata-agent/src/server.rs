@@ -2,21 +2,25 @@
 //!
 //! Implements the minimal A2A subset: `message/send` (synchronous) and the Agent Card endpoint.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
 };
+use commonware_codec::Encode;
 use commonware_runtime::{Clock, Metrics, Storage as RStorage};
 use serde::{Deserialize, Serialize};
 
+use alloy::primitives::Address;
 use alloy::signers::local::PrivateKeySigner;
 
 use crate::agent::{self, AgentConfig};
 use crate::batch::PendingBatch;
+use crate::identity::IdentityConfig;
 use crate::llm::{self, LlmClient};
 use crate::pipeline::TransitionOutput;
 use crate::poster::PosterConfig;
@@ -45,6 +49,9 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     /// Pending transitions awaiting batch proof + post. Drained by the
     /// background batch task. `None` when posting is disabled.
     pub(crate) pending_batch: Option<Arc<PendingBatch>>,
+    pub(crate) identity: IdentityConfig,
+    pub(crate) rollup_address: Address,
+    pub proofs_dir: PathBuf,
 }
 
 impl<E: RStorage + Clock + Metrics> AppState<E> {
@@ -53,6 +60,8 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
         client: LlmClient,
         executor: ToolExecutor<E>,
         pending_batch: Option<Arc<PendingBatch>>,
+        identity: IdentityConfig,
+        rollup_address: Address,
     ) -> Self {
         Self {
             config: tokio::sync::Mutex::new(config),
@@ -60,6 +69,9 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
             executor: tokio::sync::Mutex::new(executor),
             transitions: tokio::sync::Mutex::new(Vec::new()),
             pending_batch,
+            identity,
+            rollup_address,
+            proofs_dir: PathBuf::from("proofs"),
         }
     }
 }
@@ -165,9 +177,9 @@ async fn health() -> StatusCode {
 }
 
 async fn agent_card<E: RStorage + Clock + Metrics>(
-    State(_state): State<Arc<AppState<E>>>,
+    State(state): State<Arc<AppState<E>>>,
 ) -> Json<serde_json::Value> {
-    Json(serde_json::json!({
+    let mut card = serde_json::json!({
         "name": "Strata Agent",
         "description": "General-purpose agent with persistent, verifiable memory",
         "version": "0.1.0",
@@ -180,7 +192,70 @@ async fn agent_card<E: RStorage + Clock + Metrics>(
             "description": "General purpose agent with persistent memory",
             "tags": ["memory", "general"]
         }]
+    });
+
+    let id = &state.identity;
+    card["identity"] = serde_json::json!({
+        "erc8004": {
+            "agentId": id.agent_id,
+            "registry": format!("{:#x}", id.registry_address),
+            "chain": "eip155:8453"
+        }
+    });
+
+    Json(card)
+}
+
+async fn agent_registration<E: RStorage + Clock + Metrics>(
+    State(state): State<Arc<AppState<E>>>,
+) -> Json<serde_json::Value> {
+    let id = &state.identity;
+    let base_url = id.agent_base_url.trim_end_matches('/');
+
+    Json(serde_json::json!({
+        "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+        "name": "Strata Agent",
+        "description": "A persistent, verifiable AI agent whose cognitive state lives on-chain as a custom rollup. Every memory and state transition is ZK-proven and posted to Base.",
+        "image": "",
+        "services": [
+            {
+                "name": "A2A",
+                "endpoint": format!("{base_url}/.well-known/agent.json"),
+                "version": "0.1.0"
+            },
+            {
+                "name": "agentWallet",
+                "endpoint": format!("eip155:8453:{:#x}", state.rollup_address)
+            }
+        ],
+        "registrations": [{
+            "agentId": id.agent_id,
+            "agentRegistry": format!("eip155:8453:{:#x}", id.registry_address)
+        }],
+        "supportedTrust": [],
+        "active": true,
+        "x402Support": false
     }))
+}
+
+async fn get_proof<E: RStorage + Clock + Metrics>(
+    State(state): State<Arc<AppState<E>>>,
+    Path(nonce): Path<u64>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let path = state.proofs_dir.join(format!("{nonce}.json"));
+    match tokio::fs::read_to_string(&path).await {
+        Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
+            Ok(v) => (StatusCode::OK, Json(v)),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("corrupt proof file: {e}")})),
+            ),
+        },
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("no proof found for nonce {nonce}")})),
+        ),
+    }
 }
 
 async fn handle_a2a<E: RStorage + Clock + Metrics + 'static>(
@@ -263,6 +338,11 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
                 let nonce = transition.new_state.nonce.get();
                 eprintln!("transition nonce={nonce} buffered for batch");
 
+                // Persist proof to disk.
+                if let Err(e) = save_proof(&state.proofs_dir, &transition).await {
+                    eprintln!("warning: failed to save proof for nonce {nonce}: {e}");
+                }
+
                 // Buffer for the background batch task.
                 if let Some(pending) = &state.pending_batch {
                     pending.lock().await.push(transition);
@@ -300,12 +380,50 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
     }
 }
 
+// --- Proof persistence ---
+
+async fn save_proof(dir: &std::path::Path, t: &TransitionOutput) -> Result<(), String> {
+    tokio::fs::create_dir_all(dir)
+        .await
+        .map_err(|e| format!("create proofs dir: {e}"))?;
+
+    let nonce = t.new_state.nonce.get();
+    let body = serde_json::json!({
+        "nonce": nonce,
+        "oldState": {
+            "soulHash": format!("0x{}", hex::encode(t.old_state.soul_hash.as_bytes())),
+            "vectorIndexRoot": format!("0x{}", hex::encode(t.old_state.vector_index_root.as_bytes())),
+            "nonce": t.old_state.nonce.get(),
+        },
+        "newState": {
+            "soulHash": format!("0x{}", hex::encode(t.new_state.soul_hash.as_bytes())),
+            "vectorIndexRoot": format!("0x{}", hex::encode(t.new_state.vector_index_root.as_bytes())),
+            "nonce": t.new_state.nonce.get(),
+        },
+        "memoryContent": format!("0x{}", hex::encode(t.record.encode())),
+    });
+
+    let path = dir.join(format!("{nonce}.json"));
+    let bytes = serde_json::to_vec_pretty(&body).map_err(|e| format!("serialize: {e}"))?;
+    tokio::fs::write(&path, bytes)
+        .await
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+
+    eprintln!("proof saved: {}", path.display());
+    Ok(())
+}
+
 // --- Router + startup ---
 
 pub fn router<E: RStorage + Clock + Metrics + 'static>(state: Arc<AppState<E>>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/.well-known/agent.json", get(agent_card::<E>))
+        .route(
+            "/.well-known/agent-registration.json",
+            get(agent_registration::<E>),
+        )
+        .route("/proof/{nonce}", get(get_proof::<E>))
         .route("/a2a", post(handle_a2a::<E>))
         .with_state(state)
 }

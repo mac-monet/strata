@@ -12,14 +12,24 @@ use tower::ServiceExt;
 
 use strata_agent::agent::AgentConfig;
 use strata_agent::llm::{ChatResponse, ContentBlock, LlmClient, StopReason, Usage};
+use strata_agent::identity::IdentityConfig;
 use strata_agent::server::{self, AppState};
 use strata_agent::tools::ToolExecutor;
+
+fn test_identity() -> IdentityConfig {
+    IdentityConfig {
+        agent_id: 1,
+        registry_address: alloy::primitives::Address::ZERO,
+        agent_base_url: "http://localhost:3000".into(),
+        rpc_url: String::new(),
+    }
+}
 
 fn make_app_state(
     db: VectorDB<deterministic::Context>,
     client: LlmClient,
 ) -> Arc<AppState<deterministic::Context>> {
-    Arc::new(AppState::new(
+    let mut state = AppState::new(
         AgentConfig {
             soul: "You are a test agent.".into(),
             state: common::genesis_state(),
@@ -27,7 +37,11 @@ fn make_app_state(
         client,
         ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
         None, // no pending_batch
-    ))
+        test_identity(),
+        alloy::primitives::Address::ZERO,
+    );
+    state.proofs_dir = tempfile::tempdir().unwrap().into_path();
+    Arc::new(state)
 }
 
 fn dummy_client() -> LlmClient {

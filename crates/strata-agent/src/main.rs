@@ -14,6 +14,7 @@ use alloy::signers::local::PrivateKeySigner;
 use strata_agent::agent::AgentConfig;
 use strata_agent::batch::{self, BatchConfig, PendingBatch};
 use strata_agent::embed::ApiEmbedder;
+use strata_agent::identity::{self, IdentityConfig};
 use strata_agent::llm::LlmClient;
 use strata_agent::poster::{self, PosterConfig};
 use strata_agent::prover::{ProofLevel, ProverConfig};
@@ -203,7 +204,43 @@ fn main() {
             (None, None)
         };
 
-        let state = Arc::new(AppState::new(
+        // ERC-8004 identity (required).
+        let agent_id: u64 = std::env::var("AGENT_ID")
+            .expect("AGENT_ID required")
+            .parse()
+            .expect("AGENT_ID must be a number");
+        let registry_address: Address = std::env::var("REGISTRY_ADDRESS")
+            .expect("REGISTRY_ADDRESS required")
+            .parse()
+            .expect("invalid REGISTRY_ADDRESS");
+        let agent_base_url = std::env::var("AGENT_BASE_URL").expect("AGENT_BASE_URL required");
+        let identity_config = IdentityConfig {
+            agent_id,
+            registry_address,
+            agent_base_url,
+            rpc_url: std::env::var("RPC_URL").unwrap_or_default(),
+        };
+
+        let rollup_address = posting
+            .as_ref()
+            .map(|p| p.poster.contract_address)
+            .expect("RPC_URL required (rollup contract must be configured)");
+
+        // Register on-chain identity (non-fatal on failure).
+        {
+            let key_hex = std::env::var("OPERATOR_KEY").expect("OPERATOR_KEY required");
+            let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
+            match identity::register(&identity_config, signer, rollup_address).await {
+                Ok(()) => eprintln!("ERC-8004 identity registered"),
+                Err(e) => eprintln!("ERC-8004 registration failed (non-fatal): {e}"),
+            }
+        }
+
+        let proofs_dir = std::env::current_dir()
+            .expect("cannot determine cwd")
+            .join("proofs");
+
+        let mut app_state = AppState::new(
             AgentConfig {
                 soul,
                 state: agent_state,
@@ -211,7 +248,11 @@ fn main() {
             llm_client,
             executor,
             pending_batch,
-        ));
+            identity_config,
+            rollup_address,
+        );
+        app_state.proofs_dir = proofs_dir;
+        let state = Arc::new(app_state);
 
         eprintln!("agent ready — POST http://{addr}/a2a");
 
