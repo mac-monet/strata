@@ -142,7 +142,8 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
 ///
 /// Batch format: `[u32 BE length][record bytes][u32 BE length][record bytes]...`
 /// Legacy format: raw `TransitionRecord` bytes (no length prefix).
-fn decode_memory_content(
+#[doc(hidden)]
+pub fn decode_memory_content(
     bytes: &[u8],
     cfg: &TransitionRecordCfg,
 ) -> Result<Vec<TransitionRecord>, String> {

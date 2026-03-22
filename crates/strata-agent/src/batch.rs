@@ -177,7 +177,8 @@ async fn post_with_retry(
 /// Write transitions to the WAL, replacing any previous contents.
 /// Called once after draining the pending buffer so the WAL always
 /// reflects exactly the in-flight batch (no duplicates on retry).
-async fn write_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Result<(), String> {
+#[doc(hidden)]
+pub async fn write_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Result<(), String> {
     use tokio::io::AsyncWriteExt;
 
     let mut file = tokio::fs::OpenOptions::new()
@@ -207,7 +208,8 @@ async fn write_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Result<(
 }
 
 /// Reload transitions from the WAL into the pending buffer.
-async fn reload_wal(path: &PathBuf, pending: &PendingBatch) -> Result<(), String> {
+#[doc(hidden)]
+pub async fn reload_wal(path: &PathBuf, pending: &PendingBatch) -> Result<(), String> {
     let content = match tokio::fs::read_to_string(path).await {
         Ok(c) if !c.trim().is_empty() => c,
         _ => return Ok(()), // no WAL or empty

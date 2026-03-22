@@ -31,5 +31,6 @@ tokenizers = { version = "0.21", optional = true, default-features = false, feat
 axum = { version = "0.8", features = ["macros"] }
 http-body-util = "0.1"
 hyper = "1"
+tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
