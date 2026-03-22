@@ -203,9 +203,9 @@ The host uses `StandardHasher<keccak::Keccak256>` for all MMR operations. The gu
 | `strata-core` | Canonical shared types, serialization, validation (no_std) | Done |
 | `strata-proof` | ZK transition logic — MMR ops, nonce validation, integrity checks | Done |
 | `strata-vector-db` | Binary vector DB over Journaled MMR — hamming queries, merkle commitment | Done |
-| `strata-openvm` | OpenVM guest program + proving scaffold | Done (scaffold) |
+| `strata-openvm` | OpenVM guest program + host prover binary | Done (app proofs working) |
 | `contracts` | StrataRollup Solidity contract with state continuity verification | Done |
-| `strata-agent` | Host runtime — LLM, tools, prover, L1, A2A, reconstruction | **Next** |
+| `strata-agent` | Host runtime — LLM, tools, prover, L1, A2A, reconstruction | Done (4a-4i) |
 
 ---
 
@@ -318,13 +318,47 @@ After the core agent works with recall + remember + bash:
 2. The LLM writes a Weiroll script that batches multiple contract interactions into a single atomic transaction.
 3. Replaces bash-via-cast for on-chain actions with a purpose-built, sandboxed execution environment.
 
+### Step 4i: OpenVM SDK Integration — DONE
+
+**What landed:**
+- Fixed all OpenVM crate dependencies from crates.io placeholders to git refs (v1.5.0).
+- Guest program updated to v1.5.0 API (`native_keccak256` intrinsic, `reveal_u32` for public values).
+- Host binary (`strata-openvm/src/main.rs`) fully implemented with three subcommands:
+  - `cargo run` — demo mode: executes guest in VM, verifies public values match local transition.
+  - `cargo run -- prove --input <file> --level app` — generates real STARK proof (~seconds, ~7.5 GB RAM).
+  - `cargo run -- generate-verifier` — generates Solidity verifier contracts from SDK.
+- Agent prover module wired with optional `ProverConfig` (`PROVER_DIR` / `PROOF_LEVEL` env vars).
+- Server generates real proofs when prover is configured, falls back to `vec![]` (mock) when not.
+- Public values buffer set to 128 bytes with unused words zero-filled (soundness fix).
+
+**Verification decision: off-chain STARK, not on-chain EVM proofs.**
+
+EVM-verifiable proofs require wrapping STARK proofs in Halo2/BN254 (the "STARK → EVM bridge"). This is:
+- Slow: ~10+ minutes per proof on consumer hardware (STARK aggregation + Halo2 circuit synthesis + KZG proving over BN254).
+- RAM-heavy: 16-32 GB peak. Failed on 16 GB machine (needed KZG SRS params file not yet downloaded).
+- Expensive to host: $300-500/mo for a dedicated prover box.
+
+App-level STARK proofs are fast (~seconds) and fully verify the transition's correctness. The only thing lost is *on-chain* verification — anyone can still verify the proof off-chain by re-running the guest program.
+
+**Current approach:**
+- Contract uses operator signature trust (`MockStrataRollup` pattern).
+- App STARK proofs generated per transition, served via API for independent verification.
+- Memory content posted as calldata for reconstruction/DA.
+- Proof bytes NOT posted on-chain (2 MB per proof = too expensive for calldata).
+
+**Future path to on-chain verification:**
+1. **Batch proving** — accumulate N transitions, prove once/day. Amortizes Halo2 wrapping cost to ~$0.10-0.50/day on a spot instance.
+2. **Proving networks** (Succinct, Gevulot) — outsource Halo2 wrapping for ~$0.01-0.10/proof.
+3. **Native STARK verifier precompiles** on L2s — eliminates Halo2 wrapping entirely.
+4. The EVM proof code is already written (`--level evm`) — just needs KZG params + beefy hardware.
+
 ### Step 6: Demo
 
 The MVP demo tells this story:
 
 1. **Create** — deploy StrataRollup contract on Base with a soul document. Spin up strata-agent.
 2. **Interact** — have conversations. Watch the agent build memories, query the vector DB, respond. Each interaction produces a ZK proof and posts state to L1.
-3. **Verify** — show a proof being verified on-chain (330K gas). Show the state root updating.
+3. **Verify** — show the state root updating on-chain. Show the STARK proof can be independently verified off-chain by anyone.
 4. **Kill** — shut down the agent. Delete all local state.
 5. **Reconstruct** — run reconstruction from the contract address alone. Download soul + calldata + state roots. Replay from genesis.
 6. **Prove** — interact with the reconstructed agent. Show it remembers everything. Verify the state root matches.
@@ -336,7 +370,7 @@ The MVP demo tells this story:
 | Component | Technology | Notes |
 |-----------|-----------|-------|
 | Language | Rust | no_std for guest, std for host |
-| ZK Prover | **OpenVM** (was Jolt) | Production Solidity verifier, 330K gas |
+| ZK Prover | **OpenVM** (was Jolt) | STARK proofs for off-chain verification; EVM proofs deferred (see Step 4i) |
 | Hash Function | **Keccak256** (was Blake3) | OpenVM precompile + EVM opcode |
 | Infrastructure | Commonware primitives | storage, codec, cryptography, runtime |
 | Tool Runtime | **Monty** | Minimal Python interpreter in Rust, sandboxed, snapshotable |
