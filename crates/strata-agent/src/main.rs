@@ -23,7 +23,7 @@ use strata_agent::tools::ToolExecutor;
 
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_SOUL: &str = include_str!("../soul.md");
-const DEFAULT_POST_INTERVAL_SECS: u64 = 3600; // 1 hour
+const DEFAULT_POST_INTERVAL_SECS: u64 = 1800; // 30 minutes
 
 fn main() {
     // Load .env file if present (best-effort).
