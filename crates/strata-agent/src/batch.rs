@@ -32,7 +32,8 @@ pub type PendingBatch = tokio::sync::Mutex<Vec<TransitionOutput>>;
 /// Run the batch loop until the shutdown signal fires.
 ///
 /// Drains `pending` on each tick (or on shutdown), proves the batch, and posts
-/// the result on-chain.
+/// the result on-chain. Failed batches are queued for retry before new
+/// transitions are processed, preserving nonce ordering.
 pub async fn run(
     pending: Arc<PendingBatch>,
     posting: PostingConfig,
@@ -40,9 +41,13 @@ pub async fn run(
     config: BatchConfig,
     mut shutdown: watch::Receiver<bool>,
 ) {
+    // Retry queue: failed batches sit here and are retried before new work.
+    let mut retry_queue: Vec<TransitionOutput> = Vec::new();
+
     // Reload any transitions from the WAL that weren't posted before a crash.
-    if let Err(e) = reload_wal(&config.wal_path, &pending).await {
-        eprintln!("batch: failed to reload WAL: {e}");
+    match reload_wal(&config.wal_path, &pending).await {
+        Ok(()) => {}
+        Err(e) => eprintln!("batch: failed to reload WAL: {e}"),
     }
 
     let mut interval = tokio::time::interval(config.interval);
@@ -52,30 +57,37 @@ pub async fn run(
         tokio::select! {
             _ = interval.tick() => {}
             _ = shutdown.changed() => {
-                // Shutdown requested — do one final flush.
                 eprintln!("batch: shutdown signal received, flushing...");
-                flush(&pending, &posting, &prover, &config.wal_path).await;
+                flush(&pending, &posting, &prover, &config.wal_path, &mut retry_queue).await;
                 return;
             }
         }
-        flush(&pending, &posting, &prover, &config.wal_path).await;
+        flush(&pending, &posting, &prover, &config.wal_path, &mut retry_queue).await;
     }
 }
 
 /// Drain pending transitions, prove, and post.
+///
+/// Retries are processed before new transitions to preserve nonce ordering.
+/// Failed batches go into `retry_queue` rather than back into the shared
+/// `pending` buffer, preventing unbounded memory growth from retry loops.
 async fn flush(
     pending: &PendingBatch,
     posting: &PostingConfig,
     prover: &Option<ProverConfig>,
     wal_path: &PathBuf,
+    retry_queue: &mut Vec<TransitionOutput>,
 ) {
-    let batch: Vec<TransitionOutput> = {
+    // Drain retry queue first, then append any new pending transitions.
+    let mut batch: Vec<TransitionOutput> = std::mem::take(retry_queue);
+    {
         let mut lock = pending.lock().await;
-        if lock.is_empty() {
-            return;
-        }
-        std::mem::take(&mut *lock)
-    };
+        batch.append(&mut *lock);
+    }
+
+    if batch.is_empty() {
+        return;
+    }
 
     let count = batch.len();
     let first = &batch[0];
@@ -90,30 +102,28 @@ async fn flush(
     // Write to WAL *before* proving so transitions survive a crash.
     if let Err(e) = write_wal(wal_path, &batch).await {
         eprintln!("batch: WAL write failed: {e}");
-        // Put back and retry next tick — don't proceed without WAL safety.
-        pending.lock().await.splice(0..0, batch);
+        // Stash for retry next tick — don't proceed without WAL safety.
+        *retry_queue = batch;
         return;
     }
 
-    // Generate proof (if prover configured).
-    let proof_bytes = if let Some(prover_config) = prover {
+    // Generate proof (if prover configured). The proof is saved to disk and
+    // served via the API for offchain verification — it is NOT posted on-chain.
+    if let Some(prover_config) = prover {
         match prover::prove_batch(prover_config, &batch).await {
             Ok(bytes) => {
-                eprintln!("batch: proof generated ({} bytes)", bytes.len());
-                bytes
+                eprintln!("batch: proof generated ({} bytes), available via API", bytes.len());
             }
             Err(e) => {
                 eprintln!("batch: proof generation failed: {e}");
-                // Transitions are safe in the WAL; put back for retry.
-                pending.lock().await.splice(0..0, batch);
+                // Transitions are safe in the WAL; stash for retry.
+                *retry_queue = batch;
                 return;
             }
         }
-    } else {
-        vec![]
-    };
+    }
 
-    // Build public values.
+    // Build public values (state commitment).
     let public_values = pipeline::batch_public_values(
         first.old_state.vector_index_root.as_bytes(),
         last.new_state.vector_index_root.as_bytes(),
@@ -122,8 +132,8 @@ async fn flush(
         first.old_state.soul_hash.as_bytes(),
     );
 
-    // Post on-chain.
-    match post_with_retry(posting, public_values, proof_bytes, &batch).await {
+    // Post state commitment on-chain (no proof bytes — offchain verification).
+    match post_with_retry(posting, public_values, vec![], &batch).await {
         Ok(hash) => {
             eprintln!(
                 "batch: posted nonce {start_nonce}..{end_nonce}, tx={hash}"
@@ -133,8 +143,8 @@ async fn flush(
         }
         Err(e) => {
             eprintln!("batch: posting failed: {e}");
-            // Transitions are safe in the WAL; put back for retry.
-            pending.lock().await.splice(0..0, batch);
+            // Transitions are safe in the WAL; stash for retry.
+            *retry_queue = batch;
         }
     }
 }

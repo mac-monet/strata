@@ -500,6 +500,7 @@ fn save_proof(dir: &std::path::Path, t: &TransitionOutput) -> Result<(), String>
 
 pub fn router<E: RStorage + Clock + Metrics + 'static>(state: Arc<AppState<E>>) -> Router {
     Router::new()
+        .route("/", get(chat_ui))
         .route("/health", get(health))
         .route("/.well-known/agent.json", get(agent_card::<E>))
         .route(
@@ -509,6 +510,10 @@ pub fn router<E: RStorage + Clock + Metrics + 'static>(state: Arc<AppState<E>>) 
         .route("/proof/{nonce}", get(get_proof::<E>))
         .route("/a2a", post(handle_a2a::<E>))
         .with_state(state)
+}
+
+async fn chat_ui() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("chat.html"))
 }
 
 pub async fn run<E: RStorage + Clock + Metrics + 'static>(

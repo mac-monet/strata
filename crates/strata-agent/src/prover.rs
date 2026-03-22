@@ -4,8 +4,9 @@
 //! OpenVM format, compile the guest, and generate a ZK proof.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+use tokio::sync::Semaphore;
 
 use crate::error::AgentError;
 use crate::pipeline::TransitionOutput;
@@ -13,8 +14,9 @@ use crate::pipeline::TransitionOutput;
 /// Default timeout for the prover subprocess (10 minutes).
 const PROVE_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// Monotonic counter for unique temp file names across concurrent tasks.
-static PROVE_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// Only one proof process may run at a time — ZK proving is extremely
+/// memory-intensive and running multiple in parallel will OOM.
+static PROVE_SEMAPHORE: Semaphore = Semaphore::const_new(1);
 
 /// Proof aggregation level.
 #[derive(Clone, Copy, Debug, Default)]
@@ -55,6 +57,9 @@ pub struct ProverConfig {
 
 impl ProverConfig {
     pub fn new(openvm_dir: PathBuf, proof_level: ProofLevel) -> Self {
+        // Canonicalize at construction so relative paths like `./strata-openvm`
+        // resolve correctly regardless of the process CWD at prove-time.
+        let openvm_dir = std::fs::canonicalize(&openvm_dir).unwrap_or(openvm_dir);
         Self {
             openvm_dir,
             proof_level,
@@ -129,6 +134,12 @@ pub async fn prove_batch(
         return Err(AgentError::Prover("empty batch".into()));
     }
 
+    // Acquire the semaphore — only one proof at a time.
+    let _permit = PROVE_SEMAPHORE
+        .acquire()
+        .await
+        .map_err(|_| AgentError::Prover("proof semaphore closed".into()))?;
+
     // Build batch input JSON.
     let batch_transitions: Vec<_> = transitions
         .iter()
@@ -148,26 +159,28 @@ pub async fn prove_batch(
     let json_str =
         serde_json::to_string(&input_json).map_err(|e| AgentError::Prover(e.to_string()))?;
 
-    // Write JSON to a unique temp file to avoid races under concurrent use.
-    let id = PROVE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let input_file = config
-        .openvm_dir
-        .join(format!(".prove-input-{id}.json"));
+    // Write input to a stable temp file (semaphore ensures no races).
+    let input_file = config.openvm_dir.join(".prove-input.json");
     tokio::fs::write(&input_file, &json_str)
         .await
         .map_err(|e| AgentError::Prover(format!("failed to write input file: {e}")))?;
 
-    // Invoke the host binary with a timeout.
+    // Canonicalize so the path works from the prover's CWD.
+    let input_file_abs = tokio::fs::canonicalize(&input_file)
+        .await
+        .map_err(|e| AgentError::Prover(format!("failed to resolve input path: {e}")))?;
+
+    // Use the pre-built host binary instead of `cargo run --release` to avoid
+    // spawning rustc (which alone consumes several GB of RAM).
+    let host_bin = config.openvm_dir.join("target/release/strata-openvm-host");
+
     let result = tokio::time::timeout(
         config.timeout,
-        tokio::process::Command::new("cargo")
+        tokio::process::Command::new(&host_bin)
             .args([
-                "run",
-                "--release",
-                "--",
                 "prove",
                 "--input",
-                input_file.to_str().unwrap_or(".prove-input.json"),
+                input_file_abs.to_str().unwrap_or(".prove-input.json"),
                 "--level",
                 config.proof_level.as_str(),
             ])
@@ -181,7 +194,12 @@ pub async fn prove_batch(
 
     let output = result
         .map_err(|_| AgentError::Prover(format!("prover timed out after {:?}", config.timeout)))?
-        .map_err(|e| AgentError::Prover(format!("failed to spawn prover: {e}")))?;
+        .map_err(|e| {
+            AgentError::Prover(format!(
+                "failed to spawn prover (is {} built?): {e}",
+                host_bin.display()
+            ))
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

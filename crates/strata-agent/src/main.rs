@@ -204,35 +204,47 @@ fn main() {
             (None, None)
         };
 
-        // ERC-8004 identity (required).
-        let agent_id: u64 = std::env::var("AGENT_ID")
-            .expect("AGENT_ID required")
-            .parse()
-            .expect("AGENT_ID must be a number");
-        let registry_address: Address = std::env::var("REGISTRY_ADDRESS")
-            .expect("REGISTRY_ADDRESS required")
-            .parse()
-            .expect("invalid REGISTRY_ADDRESS");
-        let agent_base_url = std::env::var("AGENT_BASE_URL").expect("AGENT_BASE_URL required");
-        let identity_config = IdentityConfig {
-            agent_id,
-            registry_address,
-            agent_base_url,
-            rpc_url: std::env::var("RPC_URL").unwrap_or_default(),
+        // ERC-8004 identity (optional — only needed for on-chain registration).
+        let identity_config = match (
+            std::env::var("AGENT_ID"),
+            std::env::var("REGISTRY_ADDRESS"),
+            std::env::var("AGENT_BASE_URL"),
+        ) {
+            (Ok(id), Ok(reg), Ok(url)) => {
+                let agent_id: u64 = id.parse().expect("AGENT_ID must be a number");
+                let registry_address: Address = reg.parse().expect("invalid REGISTRY_ADDRESS");
+                eprintln!("identity: agent_id={agent_id}");
+                IdentityConfig {
+                    agent_id,
+                    registry_address,
+                    agent_base_url: url,
+                    rpc_url: std::env::var("RPC_URL").unwrap_or_default(),
+                }
+            }
+            _ => {
+                eprintln!("identity: not configured (set AGENT_ID, REGISTRY_ADDRESS, AGENT_BASE_URL)");
+                IdentityConfig {
+                    agent_id: 0,
+                    registry_address: Address::ZERO,
+                    agent_base_url: String::new(),
+                    rpc_url: String::new(),
+                }
+            }
         };
 
         let rollup_address = posting
             .as_ref()
             .map(|p| p.poster.contract_address)
-            .expect("RPC_URL required (rollup contract must be configured)");
+            .unwrap_or(Address::ZERO);
 
-        // Register on-chain identity (non-fatal on failure).
-        {
-            let key_hex = std::env::var("OPERATOR_KEY").expect("OPERATOR_KEY required");
-            let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
-            match identity::register(&identity_config, signer, rollup_address).await {
-                Ok(()) => eprintln!("ERC-8004 identity registered"),
-                Err(e) => eprintln!("ERC-8004 registration failed (non-fatal): {e}"),
+        // Register on-chain identity (non-fatal, skipped if not configured).
+        if identity_config.agent_id > 0 {
+            if let Ok(key_hex) = std::env::var("OPERATOR_KEY") {
+                let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
+                match identity::register(&identity_config, signer, rollup_address).await {
+                    Ok(()) => eprintln!("ERC-8004 identity registered"),
+                    Err(e) => eprintln!("ERC-8004 registration failed (non-fatal): {e}"),
+                }
             }
         }
 
