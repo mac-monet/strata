@@ -28,6 +28,7 @@ contract StrataRollup {
     error OnlyOperator();
     error InvalidPublicValues();
     error StateMismatch();
+    error VerificationFailed();
 
     constructor(
         string memory _soulText,

@@ -69,6 +69,10 @@ impl LocalEmbedder {
             .name("local-embedder".into())
             .spawn(move || {
                 // Keep the symbol scope alive for the lifetime of the plan.
+                // tract's Plan references symbols created from this scope;
+                // dropping it before the plan would cause a panic in plan.run().
+                // Must be declared after plan in drop order (it is — moved into
+                // closure after plan, so it drops after plan).
                 let _symbols = symbols;
                 while let Some(req) = rx.blocking_recv() {
                     let result = embed_sync(&plan, num_inputs, &tokenizer, threshold, &req.text);
