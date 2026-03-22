@@ -26,8 +26,7 @@ fn make_app_state(
         },
         client,
         ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
-        None, // no on-chain posting
-        None, // no prover
+        None, // no pending_batch
     ))
 }
 

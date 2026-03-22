@@ -16,11 +16,10 @@ use serde::{Deserialize, Serialize};
 use alloy::signers::local::PrivateKeySigner;
 
 use crate::agent::{self, AgentConfig};
-use crate::error::AgentError;
+use crate::batch::PendingBatch;
 use crate::llm::{self, LlmClient};
 use crate::pipeline::TransitionOutput;
-use crate::poster::{self, PosterConfig};
-use crate::prover::{self, ProverConfig};
+use crate::poster::PosterConfig;
 use crate::tools::ToolExecutor;
 
 /// Optional on-chain posting configuration.
@@ -43,8 +42,9 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     pub(crate) client: LlmClient,
     pub(crate) executor: tokio::sync::Mutex<ToolExecutor<E>>,
     pub(crate) transitions: tokio::sync::Mutex<Vec<TransitionOutput>>,
-    pub(crate) posting: Option<PostingConfig>,
-    pub(crate) prover: Option<ProverConfig>,
+    /// Pending transitions awaiting batch proof + post. Drained by the
+    /// background batch task. `None` when posting is disabled.
+    pub(crate) pending_batch: Option<Arc<PendingBatch>>,
 }
 
 impl<E: RStorage + Clock + Metrics> AppState<E> {
@@ -52,16 +52,14 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
         config: AgentConfig,
         client: LlmClient,
         executor: ToolExecutor<E>,
-        posting: Option<PostingConfig>,
-        prover: Option<ProverConfig>,
+        pending_batch: Option<Arc<PendingBatch>>,
     ) -> Self {
         Self {
             config: tokio::sync::Mutex::new(config),
             client,
             executor: tokio::sync::Mutex::new(executor),
             transitions: tokio::sync::Mutex::new(Vec::new()),
-            posting,
-            prover,
+            pending_batch,
         }
     }
 }
@@ -262,32 +260,16 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
     match agent::interact(&mut config, &state.client, &mut executor, &messages).await {
         Ok(result) => {
             if let Some(transition) = result.transition {
-                if let Some(posting) = &state.posting {
-                    let proof_bytes = if let Some(prover_config) = &state.prover {
-                        match prover::prove(prover_config, &transition).await {
-                            Ok(bytes) => bytes,
-                            Err(e) => {
-                                return rpc_error(
-                                    StatusCode::OK,
-                                    id,
-                                    INTERNAL_ERROR,
-                                    format!("proof generation failed: {e}"),
-                                );
-                            }
-                        }
-                    } else {
-                        vec![] // mock mode
-                    };
-                    if let Err(e) = post_with_retry(posting, &transition, proof_bytes).await {
-                        return rpc_error(
-                            StatusCode::OK,
-                            id,
-                            INTERNAL_ERROR,
-                            format!("transition succeeded locally but posting failed: {e}"),
-                        );
-                    }
+                let nonce = transition.new_state.nonce.get();
+                eprintln!("transition nonce={nonce} buffered for batch");
+
+                // Buffer for the background batch task.
+                if let Some(pending) = &state.pending_batch {
+                    pending.lock().await.push(transition);
+                } else {
+                    // No posting configured — just record locally.
+                    state.transitions.lock().await.push(transition);
                 }
-                state.transitions.lock().await.push(transition);
             }
 
             let task = A2aTask {
@@ -318,48 +300,6 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
     }
 }
 
-// --- Posting with retry ---
-
-const POST_MAX_RETRIES: u32 = 5;
-const POST_RETRY_BASE_MS: u64 = 500;
-
-async fn post_with_retry(
-    posting: &PostingConfig,
-    transition: &TransitionOutput,
-    proof_bytes: Vec<u8>,
-) -> Result<(), AgentError> {
-    let nonce = transition.new_state.nonce.get();
-    let mut last_err = None;
-    for attempt in 0..POST_MAX_RETRIES {
-        match poster::post(
-            &posting.poster,
-            posting.signer.clone(),
-            proof_bytes.clone(),
-            transition.public_values,
-            transition,
-        )
-        .await
-        {
-            Ok(hash) => {
-                eprintln!("posted transition nonce={nonce}, tx={hash}");
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!(
-                    "post attempt {}/{POST_MAX_RETRIES} failed for nonce={nonce}: {e}",
-                    attempt + 1
-                );
-                last_err = Some(e);
-                if attempt + 1 < POST_MAX_RETRIES {
-                    let delay = POST_RETRY_BASE_MS * 2u64.pow(attempt);
-                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                }
-            }
-        }
-    }
-    Err(last_err.unwrap_or_else(|| AgentError::Poster("posting failed".into())))
-}
-
 // --- Router + startup ---
 
 pub fn router<E: RStorage + Clock + Metrics + 'static>(state: Arc<AppState<E>>) -> Router {
@@ -373,12 +313,12 @@ pub fn router<E: RStorage + Clock + Metrics + 'static>(state: Arc<AppState<E>>) 
 pub async fn run<E: RStorage + Clock + Metrics + 'static>(
     state: Arc<AppState<E>>,
     addr: std::net::SocketAddr,
-) -> Result<(), AgentError> {
+) -> Result<(), crate::error::AgentError> {
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|e| AgentError::Agent(format!("failed to bind: {e}")))?;
+        .map_err(|e| crate::error::AgentError::Agent(format!("failed to bind: {e}")))?;
     axum::serve(listener, app)
         .await
-        .map_err(|e| AgentError::Agent(format!("server error: {e}")))
+        .map_err(|e| crate::error::AgentError::Agent(format!("server error: {e}")))
 }

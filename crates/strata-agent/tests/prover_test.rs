@@ -7,7 +7,6 @@ use strata_agent::prover::{ProofLevel, ProverConfig};
 #[test]
 fn proof_level_as_str() {
     assert_eq!(ProofLevel::App.as_str(), "app");
-    assert_eq!(ProofLevel::Stark.as_str(), "stark");
     assert_eq!(ProofLevel::Evm.as_str(), "evm");
 }
 
@@ -50,7 +49,6 @@ async fn prove_missing_openvm_dir_returns_error() {
             old_leaf_count: 0,
             new_entries: vec![],
         },
-        public_values: [0u8; 104],
         old_state: state,
         new_state: CoreState {
             soul_hash: SoulHash::digest(b"test"),
@@ -59,7 +57,7 @@ async fn prove_missing_openvm_dir_returns_error() {
         },
     };
 
-    let result = strata_agent::prover::prove(&config, &transition).await;
+    let result = strata_agent::prover::prove_batch(&config, &[transition]).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("prover"), "expected prover error, got: {err}");

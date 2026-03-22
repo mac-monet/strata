@@ -2,7 +2,7 @@
 //!
 //! Captures VectorDB state before an agent interaction (`snapshot`), then after
 //! all `remember` calls are complete, packages the diff into a `TransitionRecord`,
-//! `Witness`, and 104-byte public values, verified locally via `strata_proof::transition`.
+//! `Witness`, and 112-byte public values, verified locally via `strata_proof::transition`.
 
 use commonware_runtime::{Clock, Metrics, Storage as RStorage};
 use strata_core::{
@@ -25,7 +25,6 @@ pub struct Snapshot {
 pub struct TransitionOutput {
     pub record: TransitionRecord,
     pub witness: Witness,
-    pub public_values: [u8; 104],
     pub old_state: CoreState,
     pub new_state: CoreState,
 }
@@ -110,18 +109,29 @@ pub fn finalize<E: RStorage + Clock + Metrics>(
         ));
     }
 
-    // Build 104-byte public values
-    let mut public_values = [0u8; 104];
-    public_values[0..32].copy_from_slice(snap.state.vector_index_root.as_bytes());
-    public_values[32..64].copy_from_slice(db.root().as_bytes());
-    public_values[64..72].copy_from_slice(&new_nonce.get().to_be_bytes());
-    public_values[72..104].copy_from_slice(snap.state.soul_hash.as_bytes());
-
     Ok(TransitionOutput {
         record,
         witness,
-        public_values,
         old_state: snap.state,
         new_state,
     })
+}
+
+/// Build 112-byte public values for a batch of transitions.
+///
+/// Layout: `old_root[32] || new_root[32] || start_nonce[8] || end_nonce[8] || soul_hash[32]`
+pub fn batch_public_values(
+    old_root: &[u8; 32],
+    new_root: &[u8; 32],
+    start_nonce: u64,
+    end_nonce: u64,
+    soul_hash: &[u8; 32],
+) -> [u8; 112] {
+    let mut pv = [0u8; 112];
+    pv[0..32].copy_from_slice(old_root);
+    pv[32..64].copy_from_slice(new_root);
+    pv[64..72].copy_from_slice(&start_nonce.to_be_bytes());
+    pv[72..80].copy_from_slice(&end_nonce.to_be_bytes());
+    pv[80..112].copy_from_slice(soul_hash);
+    pv
 }

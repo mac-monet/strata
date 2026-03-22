@@ -48,37 +48,50 @@ fn reveal_bytes(data: &[u8], word_index: usize) {
     }
 }
 
-/// Public values layout (104 bytes, fixed offsets):
-///   [0..32]   oldRoot   — vector_index_root before transition
-///   [32..64]  newRoot   — vector_index_root after transition
-///   [64..72]  nonce     — new nonce (u64 big-endian)
-///   [72..104] soulHash  — soul document hash (carried through unchanged)
+/// Public values layout (112 bytes, fixed offsets):
+///   [0..32]   oldRoot     — vector_index_root before first transition
+///   [32..64]  newRoot     — vector_index_root after last transition
+///   [64..72]  startNonce  — first nonce in batch (u64 big-endian)
+///   [72..80]  endNonce    — last nonce in batch (u64 big-endian)
+///   [80..112] soulHash    — soul document hash (carried through unchanged)
 fn main() {
-    let state: CoreState = openvm::io::read();
-    let nonce: u64 = openvm::io::read();
-    let witness: Witness = openvm::io::read();
+    let mut state: CoreState = openvm::io::read();
+    let count: u64 = openvm::io::read();
 
     let old_root: [u8; 32] = *state.vector_index_root.as_bytes();
     let soul_hash: [u8; 32] = *state.soul_hash.as_bytes();
 
-    let new_state = strata_proof::transition::<OpenVmKeccak>(
-        state,
-        Nonce::new(nonce),
-        &witness,
-    )
-    .expect("transition failed");
+    let mut start_nonce: u64 = 0;
+    let mut end_nonce: u64 = 0;
 
-    let new_root: [u8; 32] = *new_state.vector_index_root.as_bytes();
-    let new_nonce: u64 = new_state.nonce.get();
+    for i in 0..count {
+        let nonce: u64 = openvm::io::read();
+        let witness: Witness = openvm::io::read();
 
-    // Reveal full state transition as public output (104 bytes).
-    reveal_bytes(&old_root, 0);                      // [0..32]   word indices 0..8
-    reveal_bytes(&new_root, 8);                      // [32..64]  word indices 8..16
-    reveal_bytes(&new_nonce.to_be_bytes(), 16);      // [64..72]  word indices 16..18
-    reveal_bytes(&soul_hash, 18);                    // [72..104] word indices 18..26
+        if i == 0 {
+            start_nonce = nonce;
+        }
+        end_nonce = nonce;
+
+        state = strata_proof::transition::<OpenVmKeccak>(
+            state,
+            Nonce::new(nonce),
+            &witness,
+        )
+        .expect("transition failed");
+    }
+
+    let new_root: [u8; 32] = *state.vector_index_root.as_bytes();
+
+    // Reveal full batch transition as public output (112 bytes).
+    reveal_bytes(&old_root, 0);                          // [0..32]   word indices 0..8
+    reveal_bytes(&new_root, 8);                          // [32..64]  word indices 8..16
+    reveal_bytes(&start_nonce.to_be_bytes(), 16);        // [64..72]  word indices 16..18
+    reveal_bytes(&end_nonce.to_be_bytes(), 18);          // [72..80]  word indices 18..20
+    reveal_bytes(&soul_hash, 20);                        // [80..112] word indices 20..28
 
     // Zero-fill remaining words to constrain the full public values buffer.
-    for i in 26..32 {
+    for i in 28..32 {
         openvm::io::reveal_u32(0, i);
     }
 }

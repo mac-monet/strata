@@ -23,7 +23,8 @@ use strata_agent::llm::{ChatResponse, ContentBlock, LlmClient, StopReason, Usage
 use strata_agent::pipeline;
 use strata_agent::poster::{self, PosterConfig};
 use strata_agent::reconstruct;
-use strata_agent::server::{self, AppState, PostingConfig};
+use strata_agent::batch::PendingBatch;
+use strata_agent::server::{self, AppState};
 use strata_agent::tools::ToolExecutor;
 
 // --- Helpers ---
@@ -82,6 +83,28 @@ fn a2a_request(text: &str) -> Request<Body> {
         .unwrap()
 }
 
+/// Drain pending transitions from the batch and post them on-chain.
+async fn flush_and_post(
+    pending: &Arc<PendingBatch>,
+    poster_config: &PosterConfig,
+    signer: PrivateKeySigner,
+) {
+    let batch: Vec<_> = std::mem::take(&mut *pending.lock().await);
+    assert!(!batch.is_empty(), "expected pending transitions");
+    let first = &batch[0];
+    let last = &batch[batch.len() - 1];
+    let pv = pipeline::batch_public_values(
+        first.old_state.vector_index_root.as_bytes(),
+        last.new_state.vector_index_root.as_bytes(),
+        first.record.input.nonce.get(),
+        last.record.input.nonce.get(),
+        first.old_state.soul_hash.as_bytes(),
+    );
+    poster::post_batch(poster_config, signer, vec![], pv, &batch)
+        .await
+        .expect("post_batch failed");
+}
+
 // --- Tests ---
 
 /// Direct pipeline test: deploy → remember → finalize → post → reconstruct.
@@ -134,8 +157,18 @@ fn e2e_deploy_interact_post_reconstruct() {
         assert_eq!(poster::read_nonce(&poster_config).await.unwrap(), 0);
         assert_eq!(poster::read_state_root(&poster_config).await.unwrap(), genesis_root);
 
+        // Build public values for the batch
+        let nonce = transition.new_state.nonce.get();
+        let pv = pipeline::batch_public_values(
+            transition.old_state.vector_index_root.as_bytes(),
+            transition.new_state.vector_index_root.as_bytes(),
+            nonce,
+            nonce,
+            transition.new_state.soul_hash.as_bytes(),
+        );
+
         // Post transition
-        poster::post(&poster_config, signer.clone(), vec![], transition.public_values, &transition)
+        poster::post_batch(&poster_config, signer.clone(), vec![], pv, std::slice::from_ref(&transition))
             .await
             .expect("post failed");
 
@@ -185,10 +218,7 @@ fn server_posts_transition_on_interaction() {
         let db = VectorDB::new(ctx, db_config).await.unwrap();
 
         let client = mock_remember_client("roses are red");
-        let posting = PostingConfig {
-            poster: poster_config.clone(),
-            signer: signer.clone(),
-        };
+        let pending: Arc<PendingBatch> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
         let state = Arc::new(AppState::new(
             AgentConfig {
@@ -197,8 +227,7 @@ fn server_posts_transition_on_interaction() {
             },
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
-            Some(posting),
-            None, // no prover
+            Some(pending.clone()),
         ));
 
         // Send message through the HTTP handler
@@ -211,7 +240,8 @@ fn server_posts_transition_on_interaction() {
         assert!(rpc["error"].is_null(), "unexpected error: {}", rpc["error"]);
         assert_eq!(rpc["result"]["status"]["state"], "completed");
 
-        // Verify transition was posted on-chain
+        // Flush pending transitions and post on-chain
+        flush_and_post(&pending, &poster_config, signer.clone()).await;
         assert_eq!(poster::read_nonce(&poster_config).await.unwrap(), 1);
 
         // Reconstruct and verify content
@@ -288,10 +318,7 @@ fn server_posts_two_transitions_sequentially() {
             Ok(q.remove(0))
         });
 
-        let posting = PostingConfig {
-            poster: poster_config.clone(),
-            signer: signer.clone(),
-        };
+        let pending: Arc<PendingBatch> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
         let state = Arc::new(AppState::new(
             AgentConfig {
@@ -300,8 +327,7 @@ fn server_posts_two_transitions_sequentially() {
             },
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
-            Some(posting),
-            None, // no prover
+            Some(pending.clone()),
         ));
 
         // First interaction
@@ -312,6 +338,8 @@ fn server_posts_two_transitions_sequentially() {
         let rpc: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(rpc["error"].is_null(), "interaction 1 error: {}", rpc["error"]);
 
+        // Flush first transition
+        flush_and_post(&pending, &poster_config, signer.clone()).await;
         assert_eq!(poster::read_nonce(&poster_config).await.unwrap(), 1);
 
         // Second interaction (on-chain nonce must be 2, roots must chain)
@@ -322,6 +350,8 @@ fn server_posts_two_transitions_sequentially() {
         let rpc: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(rpc["error"].is_null(), "interaction 2 error: {}", rpc["error"]);
 
+        // Flush second transition
+        flush_and_post(&pending, &poster_config, signer.clone()).await;
         assert_eq!(poster::read_nonce(&poster_config).await.unwrap(), 2);
 
         // Reconstruct and verify both facts

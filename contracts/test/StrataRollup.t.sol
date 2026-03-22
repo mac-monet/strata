@@ -46,14 +46,15 @@ contract StrataRollupTest is Test {
         );
     }
 
-    /// @dev Build the 104-byte publicValues blob matching the guest layout.
+    /// @dev Build the 112-byte publicValues blob matching the guest layout.
     function _buildPublicValues(
         bytes32 oldRoot,
         bytes32 newRoot,
-        uint64 newNonce,
+        uint64 startNonce,
+        uint64 endNonce,
         bytes32 _soulHash
     ) internal pure returns (bytes memory) {
-        return abi.encodePacked(oldRoot, newRoot, newNonce, _soulHash);
+        return abi.encodePacked(oldRoot, newRoot, startNonce, endNonce, _soulHash);
     }
 
     function test_deployment() public view {
@@ -66,7 +67,7 @@ contract StrataRollupTest is Test {
     function test_submitTransition() public {
         bytes32 newRoot = bytes32(uint256(0xABCD));
         bytes memory pv = _buildPublicValues(
-            initialRoot, newRoot, 1, keccak256(bytes(soulText))
+            initialRoot, newRoot, 1, 1, keccak256(bytes(soulText))
         );
 
         vm.prank(operator);
@@ -79,7 +80,7 @@ contract StrataRollupTest is Test {
     function test_submitTransition_emits_event() public {
         bytes32 newRoot = bytes32(uint256(0xABCD));
         bytes memory pv = _buildPublicValues(
-            initialRoot, newRoot, 1, keccak256(bytes(soulText))
+            initialRoot, newRoot, 1, 1, keccak256(bytes(soulText))
         );
 
         vm.expectEmit(true, true, false, false);
@@ -95,7 +96,7 @@ contract StrataRollupTest is Test {
 
         for (uint64 i = 1; i <= 5; i++) {
             bytes32 newRoot = bytes32(uint256(i * 0x100));
-            bytes memory pv = _buildPublicValues(currentRoot, newRoot, i, soul);
+            bytes memory pv = _buildPublicValues(currentRoot, newRoot, i, i, soul);
 
             vm.prank(operator);
             rollup.submitTransition(pv, "", "");
@@ -108,7 +109,7 @@ contract StrataRollupTest is Test {
 
     function test_revert_nonOperator() public {
         bytes memory pv = _buildPublicValues(
-            initialRoot, bytes32(0), 1, keccak256(bytes(soulText))
+            initialRoot, bytes32(0), 1, 1, keccak256(bytes(soulText))
         );
 
         vm.prank(address(0xDEAD));
@@ -121,21 +122,21 @@ contract StrataRollupTest is Test {
         vm.expectRevert(StrataRollup.InvalidPublicValues.selector);
         rollup.submitTransition("", "", "");
 
-        // 32 bytes — was enough before, now too short (need 104)
+        // 32 bytes — was enough before, now too short (need 112)
         vm.prank(operator);
         vm.expectRevert(StrataRollup.InvalidPublicValues.selector);
         rollup.submitTransition(abi.encodePacked(bytes32(0)), "", "");
 
-        // 103 bytes — one short
+        // 111 bytes — one short
         vm.prank(operator);
         vm.expectRevert(StrataRollup.InvalidPublicValues.selector);
-        rollup.submitTransition(new bytes(103), "", "");
+        rollup.submitTransition(new bytes(111), "", "");
     }
 
     function test_revert_wrong_oldRoot() public {
         bytes32 wrongOldRoot = bytes32(uint256(0xDEAD));
         bytes memory pv = _buildPublicValues(
-            wrongOldRoot, bytes32(uint256(0xBEEF)), 1, keccak256(bytes(soulText))
+            wrongOldRoot, bytes32(uint256(0xBEEF)), 1, 1, keccak256(bytes(soulText))
         );
 
         vm.prank(operator);
@@ -145,7 +146,7 @@ contract StrataRollupTest is Test {
 
     function test_revert_wrong_nonce() public {
         bytes memory pv = _buildPublicValues(
-            initialRoot, bytes32(uint256(0xBEEF)), 99, keccak256(bytes(soulText))
+            initialRoot, bytes32(uint256(0xBEEF)), 99, 99, keccak256(bytes(soulText))
         );
 
         vm.prank(operator);
@@ -155,7 +156,7 @@ contract StrataRollupTest is Test {
 
     function test_revert_wrong_soulHash() public {
         bytes memory pv = _buildPublicValues(
-            initialRoot, bytes32(uint256(0xBEEF)), 1, bytes32(uint256(0xBAD))
+            initialRoot, bytes32(uint256(0xBEEF)), 1, 1, bytes32(uint256(0xBAD))
         );
 
         vm.prank(operator);
@@ -166,7 +167,7 @@ contract StrataRollupTest is Test {
     function test_memoryContent_is_calldata_only() public {
         bytes32 newRoot = bytes32(uint256(0x9999));
         bytes memory pv = _buildPublicValues(
-            initialRoot, newRoot, 1, keccak256(bytes(soulText))
+            initialRoot, newRoot, 1, 1, keccak256(bytes(soulText))
         );
         bytes memory content = "some memory content for DA";
 
@@ -174,5 +175,30 @@ contract StrataRollupTest is Test {
         rollup.submitTransition(pv, "", content);
 
         assertEq(rollup.stateRoot(), newRoot);
+    }
+
+    function test_batchTransition() public {
+        bytes32 newRoot = bytes32(uint256(0xBA7C4));
+        bytes32 soul = keccak256(bytes(soulText));
+        // Batch covering nonces 1 through 3.
+        bytes memory pv = _buildPublicValues(initialRoot, newRoot, 1, 3, soul);
+
+        vm.prank(operator);
+        rollup.submitTransition(pv, "", "");
+
+        assertEq(rollup.nonce(), 3);
+        assertEq(rollup.stateRoot(), newRoot);
+    }
+
+    function test_revert_endNonce_lt_startNonce() public {
+        bytes32 soul = keccak256(bytes(soulText));
+        // endNonce (0) < startNonce (1) should revert.
+        bytes memory pv = _buildPublicValues(
+            initialRoot, bytes32(uint256(0xBEEF)), 1, 0, soul
+        );
+
+        vm.prank(operator);
+        vm.expectRevert(StrataRollup.StateMismatch.selector);
+        rollup.submitTransition(pv, "", "");
     }
 }

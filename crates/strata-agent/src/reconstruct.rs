@@ -62,11 +62,11 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
         .await
         .map_err(|e| err(format!("get_logs failed: {e}")))?;
 
-    if logs.len() as u64 != on_chain_nonce {
-        return Err(err(format!(
-            "log count {} != on-chain nonce {on_chain_nonce}",
-            logs.len()
-        )));
+    // With batching, each tx may contain multiple transitions, so the
+    // number of logs (one per submitTransition call) can be less than the
+    // on-chain nonce (which counts individual transitions).
+    if logs.is_empty() && on_chain_nonce > 0 {
+        return Err(err("expected logs but found none".into()));
     }
 
     // 3. Decode calldata from each transaction
@@ -94,13 +94,20 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
             StrataRollup::submitTransitionCall::abi_decode(input)
                 .map_err(|e| err(format!("ABI decode failed: {e}")))?;
 
-        // Third field is memoryContent (the unnamed `_2` parameter)
+        // Third field is memoryContent (the unnamed `_2` parameter).
+        // May contain a single record (legacy) or length-prefixed batch.
         let memory_bytes = decoded_call._2;
+        let batch = decode_memory_content(&memory_bytes, &cfg)
+            .map_err(|e| err(format!("record decode failed for tx {tx_hash}: {e}")))?;
+        records.extend(batch);
+    }
 
-        let record = TransitionRecord::decode_cfg(memory_bytes, &cfg)
-            .map_err(|e| err(format!("record decode failed: {e}")))?;
-
-        records.push(record);
+    // Verify total transitions match on-chain nonce
+    if records.len() as u64 != on_chain_nonce {
+        return Err(err(format!(
+            "decoded {} transitions but on-chain nonce is {on_chain_nonce}",
+            records.len()
+        )));
     }
 
     // 4. Flatten entries and contents
@@ -128,4 +135,58 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
         entries,
         contents,
     })
+}
+
+/// Decode memory content from calldata, handling both legacy (single record)
+/// and batch (length-prefixed records) formats.
+///
+/// Batch format: `[u32 BE length][record bytes][u32 BE length][record bytes]...`
+/// Legacy format: raw `TransitionRecord` bytes (no length prefix).
+fn decode_memory_content(
+    bytes: &[u8],
+    cfg: &TransitionRecordCfg,
+) -> Result<Vec<TransitionRecord>, String> {
+    if bytes.is_empty() {
+        return Err("empty memory content".into());
+    }
+
+    // Try batch format first: read length prefix and see if it makes sense.
+    if bytes.len() >= 4 {
+        let first_len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        // Heuristic: if the first 4 bytes parse as a reasonable length that fits
+        // within the remaining data, treat as batch format.
+        if first_len > 0 && first_len <= bytes.len() - 4 {
+            if let Ok(records) = decode_batch(bytes, cfg) {
+                return Ok(records);
+            }
+        }
+    }
+
+    // Fall back to legacy single-record format.
+    let record = TransitionRecord::decode_cfg(bytes, cfg)
+        .map_err(|e| format!("legacy decode: {e}"))?;
+    Ok(vec![record])
+}
+
+/// Decode length-prefixed batch of transition records.
+fn decode_batch(
+    mut bytes: &[u8],
+    cfg: &TransitionRecordCfg,
+) -> Result<Vec<TransitionRecord>, String> {
+    let mut records = Vec::new();
+    while bytes.len() >= 4 {
+        let len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
+        bytes = &bytes[4..];
+        if bytes.len() < len {
+            return Err(format!("truncated record: need {len} bytes, have {}", bytes.len()));
+        }
+        let record = TransitionRecord::decode_cfg(&bytes[..len], cfg)
+            .map_err(|e| format!("batch record decode: {e}"))?;
+        records.push(record);
+        bytes = &bytes[len..];
+    }
+    if !bytes.is_empty() {
+        return Err(format!("trailing {} bytes after batch", bytes.len()));
+    }
+    Ok(records)
 }

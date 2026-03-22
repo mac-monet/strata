@@ -30,7 +30,6 @@ fn single_memory_transition_from_genesis() {
 
         let output = pipeline::finalize(&snap, &db, &contents).unwrap();
 
-        assert_eq!(output.public_values.len(), 104);
         assert_eq!(output.new_state.nonce, Nonce::new(1));
         assert_eq!(output.new_state.vector_index_root, db.root());
         assert_eq!(output.record.new_entries.len(), 1);
@@ -89,30 +88,25 @@ fn no_new_memories_returns_error() {
 }
 
 #[test]
-fn public_values_byte_layout() {
+fn transition_output_fields() {
     deterministic::Runner::default().start(|context| async move {
         let config = common::make_config("layout", &context);
         let mut db = VectorDB::new(context, config).await.unwrap();
         let state = common::genesis_state();
 
         let snap = pipeline::snapshot(state, &db);
-        let old_root = *state.vector_index_root.as_bytes();
 
         let entry = make_entry(0, b"test");
         db.append(entry).await.unwrap();
         let contents = vec!["test".to_string()];
 
         let output = pipeline::finalize(&snap, &db, &contents).unwrap();
-        let pv = output.public_values;
 
-        // [0..32] = old_root
-        assert_eq!(&pv[0..32], &old_root);
-        // [32..64] = new_root
-        assert_eq!(&pv[32..64], db.root().as_bytes());
-        // [64..72] = nonce as u64 big-endian
-        assert_eq!(&pv[64..72], &1u64.to_be_bytes());
-        // [72..104] = soul_hash
-        assert_eq!(&pv[72..104], state.soul_hash.as_bytes());
+        // old_state and new_state are preserved
+        assert_eq!(output.old_state.vector_index_root, state.vector_index_root);
+        assert_eq!(output.new_state.vector_index_root, db.root());
+        assert_eq!(output.new_state.nonce, Nonce::new(1));
+        assert_eq!(output.new_state.soul_hash, state.soul_hash);
 
         db.destroy().await.unwrap();
     });
@@ -149,8 +143,8 @@ fn nonce_increments_from_nonzero() {
 
         assert_eq!(output.new_state.nonce, Nonce::new(6));
         assert_eq!(output.record.input.nonce, Nonce::new(6));
-        // Verify nonce in public values
-        assert_eq!(&output.public_values[64..72], &6u64.to_be_bytes());
+        // Verify nonce in old/new state
+        assert_eq!(output.old_state.nonce, Nonce::new(5));
 
         db.destroy().await.unwrap();
     });
@@ -212,8 +206,8 @@ fn chained_transitions() {
         assert_eq!(out2.record.new_entries.len(), 2);
         assert_eq!(out2.new_state.vector_index_root, db.root());
 
-        // Verify continuity: out1's new_root == out2's old_root in public values
-        assert_eq!(&out2.public_values[0..32], out1.new_state.vector_index_root.as_bytes());
+        // Verify continuity: out1's new_root == out2's old_root
+        assert_eq!(out2.old_state.vector_index_root, out1.new_state.vector_index_root);
 
         db.destroy().await.unwrap();
     });

@@ -7,25 +7,23 @@ use alloy::{
 };
 use strata_agent::poster;
 
-/// Verify public values layout: 104 bytes with correct field positions.
+/// Verify public values layout: 112 bytes with correct field positions.
 #[test]
 fn public_values_layout() {
-    let mut pv = [0u8; 104];
+    use strata_agent::pipeline;
 
     let old_root = [1u8; 32];
     let new_root = [2u8; 32];
-    let nonce: u64 = 42;
     let soul_hash = [3u8; 32];
 
-    pv[0..32].copy_from_slice(&old_root);
-    pv[32..64].copy_from_slice(&new_root);
-    pv[64..72].copy_from_slice(&nonce.to_be_bytes());
-    pv[72..104].copy_from_slice(&soul_hash);
+    let pv = pipeline::batch_public_values(&old_root, &new_root, 1, 42, &soul_hash);
 
+    assert_eq!(pv.len(), 112);
     assert_eq!(&pv[0..32], &old_root);
     assert_eq!(&pv[32..64], &new_root);
-    assert_eq!(u64::from_be_bytes(pv[64..72].try_into().unwrap()), 42);
-    assert_eq!(&pv[72..104], &soul_hash);
+    assert_eq!(u64::from_be_bytes(pv[64..72].try_into().unwrap()), 1);   // start_nonce
+    assert_eq!(u64::from_be_bytes(pv[72..80].try_into().unwrap()), 42);  // end_nonce
+    assert_eq!(&pv[80..112], &soul_hash);
 }
 
 /// Verify the sol! macro generates valid ABI-encoded calldata.
@@ -34,7 +32,7 @@ fn submit_transition_encoding() {
     use alloy::sol_types::SolCall;
 
     let call = poster::StrataRollup::submitTransitionCall {
-        publicValues: Bytes::from(vec![0u8; 104]),
+        publicValues: Bytes::from(vec![0u8; 112]),
         proofData: Bytes::new(),
         _2: Bytes::new(),
     };

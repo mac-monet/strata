@@ -73,7 +73,7 @@ fn parse_prove_args(args: &[String]) -> ProveArgs {
     }
 }
 
-/// Public values size in bytes. Our layout is 104 bytes (26 u32 words).
+/// Public values size in bytes. Our layout is 112 bytes (28 u32 words).
 /// Round up to 128 for alignment headroom.
 const PUBLIC_VALUES_SIZE: usize = 128;
 
@@ -84,7 +84,7 @@ fn build_sdk() -> Sdk {
     let mut app_config: openvm_sdk::config::AppConfig<SdkVmConfig> =
         SdkVmConfig::from_toml(&toml_content).expect("failed to parse openvm.toml");
 
-    // Override public values size — our guest outputs 104 bytes.
+    // Override public values size — our guest outputs 112 bytes.
     app_config.app_vm_config.system.config =
         app_config.app_vm_config.system.config.with_public_values(PUBLIC_VALUES_SIZE);
 
@@ -104,16 +104,74 @@ fn build_sdk_and_elf() -> (Sdk, Elf) {
     (sdk, elf)
 }
 
-/// Prepare StdIn from the transition inputs, matching the guest's read order:
+/// A single transition entry in a batch.
+#[derive(Clone)]
+struct TransitionEntry {
+    nonce: u64,
+    witness: Witness,
+}
+
+/// Prepare StdIn from a batch of transitions, matching the guest's read order:
 ///   1. CoreState
-///   2. u64 (nonce)
-///   3. Witness
-fn prepare_stdin(state: &CoreState, nonce: u64, witness: &Witness) -> StdIn {
+///   2. u64 (count)
+///   3. For each transition: u64 (nonce), Witness
+fn prepare_stdin(state: &CoreState, transitions: &[TransitionEntry]) -> StdIn {
     let mut stdin = StdIn::default();
     stdin.write(state);
-    stdin.write(&nonce);
-    stdin.write(witness);
+    stdin.write(&(transitions.len() as u64));
+    for entry in transitions {
+        stdin.write(&entry.nonce);
+        stdin.write(&entry.witness);
+    }
     stdin
+}
+
+/// Parse JSON input, supporting both batch and single-transition formats.
+///
+/// Batch format:
+/// ```json
+/// { "state": <CoreState>, "transitions": [{ "nonce": <u64>, "witness": <Witness> }, ...] }
+/// ```
+///
+/// Single-transition format (backward compat, converted to batch of 1):
+/// ```json
+/// { "state": <CoreState>, "nonce": <u64>, "witness": <Witness> }
+/// ```
+fn parse_input(input: &serde_json::Value) -> (CoreState, Vec<TransitionEntry>) {
+    let state: CoreState =
+        serde_json::from_value(input["state"].clone()).unwrap_or_else(|e| panic!("bad state: {e}"));
+
+    let transitions = if input.get("transitions").is_some() {
+        // Batch format.
+        let arr = input["transitions"]
+            .as_array()
+            .expect("transitions must be an array");
+        arr.iter()
+            .map(|t| {
+                let nonce: Nonce = serde_json::from_value(t["nonce"].clone())
+                    .unwrap_or_else(|e| panic!("bad nonce: {e}"));
+                let witness: Witness = serde_json::from_value(t["witness"].clone())
+                    .unwrap_or_else(|e| panic!("bad witness: {e}"));
+                TransitionEntry {
+                    nonce: nonce.get(),
+                    witness,
+                }
+            })
+            .collect()
+    } else {
+        // Single-transition format (backward compat).
+        let nonce: Nonce = serde_json::from_value(input["nonce"].clone())
+            .unwrap_or_else(|e| panic!("bad nonce: {e}"));
+        let witness: Witness = serde_json::from_value(input["witness"].clone())
+            .unwrap_or_else(|e| panic!("bad witness: {e}"));
+        vec![TransitionEntry {
+            nonce: nonce.get(),
+            witness,
+        }]
+    };
+
+    assert!(!transitions.is_empty(), "at least one transition is required");
+    (state, transitions)
 }
 
 /// Prove mode: read JSON input, build guest, generate proof.
@@ -125,22 +183,24 @@ fn prove_mode(args: &[String]) {
     let input: serde_json::Value =
         serde_json::from_str(&json_str).unwrap_or_else(|e| panic!("invalid JSON: {e}"));
 
-    let state: CoreState =
-        serde_json::from_value(input["state"].clone()).unwrap_or_else(|e| panic!("bad state: {e}"));
-    let nonce: Nonce = serde_json::from_value(input["nonce"].clone())
-        .unwrap_or_else(|e| panic!("bad nonce: {e}"));
-    let witness: Witness = serde_json::from_value(input["witness"].clone())
-        .unwrap_or_else(|e| panic!("bad witness: {e}"));
+    let (state, transitions) = parse_input(&input);
 
-    // Local sanity check.
-    let new_state = strata_proof::transition::<Keccak256Hasher>(state, nonce, &witness)
+    // Local sanity check: chain all transitions.
+    let mut check_state = state;
+    for entry in &transitions {
+        check_state = strata_proof::transition::<Keccak256Hasher>(
+            check_state,
+            Nonce::new(entry.nonce),
+            &entry.witness,
+        )
         .expect("local transition verification failed");
-    eprintln!("local verification passed");
+    }
+    eprintln!("local verification passed ({} transition(s))", transitions.len());
     eprintln!("  old root: {:?}", state.vector_index_root);
-    eprintln!("  new root: {:?}", new_state.vector_index_root);
+    eprintln!("  new root: {:?}", check_state.vector_index_root);
 
     let (sdk, elf) = build_sdk_and_elf();
-    let stdin = prepare_stdin(&state, nonce.get(), &witness);
+    let stdin = prepare_stdin(&state, &transitions);
 
     match prove_args.level.as_str() {
         "app" => prove_app(&sdk, elf, stdin),
@@ -261,32 +321,44 @@ fn demo_mode() {
         new_entries: entries,
     };
 
-    let nonce = 1u64;
+    let transitions = vec![TransitionEntry {
+        nonce: 1u64,
+        witness,
+    }];
 
-    // Write test input JSON for use with `prove` subcommand.
+    // Write test input JSON (batch format) for use with `prove` subcommand.
     let input_json = serde_json::json!({
         "state": state,
-        "nonce": Nonce::new(nonce),
-        "witness": witness,
+        "transitions": transitions.iter().map(|t| serde_json::json!({
+            "nonce": Nonce::new(t.nonce),
+            "witness": t.witness,
+        })).collect::<Vec<_>>(),
     });
     let json_str = serde_json::to_string_pretty(&input_json).unwrap();
     fs::write("test-input.json", &json_str).expect("failed to write test-input.json");
     eprintln!("wrote test-input.json");
 
-    // Run the transition locally as a sanity check.
-    let new_state =
-        strata_proof::transition::<Keccak256Hasher>(state, Nonce::new(nonce), &witness)
-            .expect("transition failed");
+    // Run the transitions locally as a sanity check.
+    let mut check_state = state;
+    for entry in &transitions {
+        check_state = strata_proof::transition::<Keccak256Hasher>(
+            check_state,
+            Nonce::new(entry.nonce),
+            &entry.witness,
+        )
+        .expect("transition failed");
+    }
 
-    println!("Local transition succeeded:");
-    println!("  old root:  {:?}", state.vector_index_root);
-    println!("  new root:  {:?}", new_state.vector_index_root);
-    println!("  new nonce: {:?}", new_state.nonce);
-    println!("  soul hash: {:?}", new_state.soul_hash);
+    println!("Local transition succeeded ({} transition(s)):", transitions.len());
+    println!("  old root:    {:?}", state.vector_index_root);
+    println!("  new root:    {:?}", check_state.vector_index_root);
+    println!("  start nonce: {}", transitions.first().unwrap().nonce);
+    println!("  end nonce:   {}", transitions.last().unwrap().nonce);
+    println!("  soul hash:   {:?}", check_state.soul_hash);
 
     // Build SDK and execute (no proof) to verify guest compatibility.
     let (sdk, elf) = build_sdk_and_elf();
-    let stdin = prepare_stdin(&state, nonce, &witness);
+    let stdin = prepare_stdin(&state, &transitions);
 
     eprintln!("executing guest program (no proof)...");
     let public_values = sdk
@@ -296,8 +368,9 @@ fn demo_mode() {
 
     println!();
     println!("Public values ({} bytes):", public_values.len());
-    println!("  [0..32]   oldRoot:  {}", hex::encode(&public_values[..32]));
-    println!("  [32..64]  newRoot:  {}", hex::encode(&public_values[32..64]));
-    println!("  [64..72]  nonce:    {}", hex::encode(&public_values[64..72]));
-    println!("  [72..104] soulHash: {}", hex::encode(&public_values[72..104]));
+    println!("  [0..32]   oldRoot:    {}", hex::encode(&public_values[..32]));
+    println!("  [32..64]  newRoot:    {}", hex::encode(&public_values[32..64]));
+    println!("  [64..72]  startNonce: {}", hex::encode(&public_values[64..72]));
+    println!("  [72..80]  endNonce:   {}", hex::encode(&public_values[72..80]));
+    println!("  [80..112] soulHash:   {}", hex::encode(&public_values[80..112]));
 }

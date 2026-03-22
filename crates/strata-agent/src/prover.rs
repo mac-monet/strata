@@ -117,24 +117,32 @@ pub async fn read_app_commit(config: &ProverConfig) -> Result<AppCommit, AgentEr
     })
 }
 
-/// Generate a ZK proof for a state transition.
+/// Generate a ZK proof for a batch of state transitions.
 ///
-/// Returns the raw proof bytes on success. For EVM proofs, these are the
-/// concatenated `accumulator ++ proof` bytes ready for on-chain submission.
-///
-/// Calls the `strata-openvm-host prove` subcommand which handles:
-/// 1. Serializing `CoreState`, nonce, and `Witness` in OpenVM's `StdIn` format
-/// 2. Compiling the guest (if needed)
-/// 3. Running the prover at the specified `ProofLevel`
-pub async fn prove(
+/// Returns the raw proof bytes on success. The host binary accepts the batch
+/// JSON format with a `transitions` array.
+pub async fn prove_batch(
     config: &ProverConfig,
-    transition: &TransitionOutput,
+    transitions: &[TransitionOutput],
 ) -> Result<Vec<u8>, AgentError> {
-    // Serialize the pre-transition state, new nonce, and witness as JSON.
+    if transitions.is_empty() {
+        return Err(AgentError::Prover("empty batch".into()));
+    }
+
+    // Build batch input JSON.
+    let batch_transitions: Vec<_> = transitions
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "nonce": t.record.input.nonce,
+                "witness": t.witness,
+            })
+        })
+        .collect();
+
     let input_json = serde_json::json!({
-        "state": transition.old_state,
-        "nonce": transition.record.input.nonce,
-        "witness": transition.witness,
+        "state": transitions[0].old_state,
+        "transitions": batch_transitions,
     });
 
     let json_str =

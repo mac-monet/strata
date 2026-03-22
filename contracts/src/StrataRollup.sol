@@ -56,12 +56,13 @@ contract StrataRollup {
         stateRoot = _initialStateRoot;
     }
 
-    /// @notice Submit a proven state transition.
-    /// @param publicValues Public values from the ZK proof (104 bytes):
-    ///        [0..32]   oldRoot  — must match current stateRoot
-    ///        [32..64]  newRoot  — the post-transition state root
-    ///        [64..72]  nonce    — must equal current nonce + 1 (u64 BE)
-    ///        [72..104] soulHash — must match contract's soulHash
+    /// @notice Submit a proven state transition (single or batch).
+    /// @param publicValues Public values from the ZK proof (112 bytes):
+    ///        [0..32]   oldRoot    — must match current stateRoot
+    ///        [32..64]  newRoot    — the post-transition state root
+    ///        [64..72]  startNonce — must equal current nonce + 1 (u64 BE)
+    ///        [72..80]  endNonce   — must be >= startNonce (u64 BE)
+    ///        [80..112] soulHash   — must match contract's soulHash
     /// @param proofData The ZK proof bytes.
     /// @dev The third parameter is raw memory content posted as calldata
     ///      for reconstruction/DA. Not read on-chain.
@@ -71,7 +72,7 @@ contract StrataRollup {
         bytes calldata /* memoryContent */
     ) external {
         if (msg.sender != operator) revert OnlyOperator();
-        if (publicValues.length < 104) revert InvalidPublicValues();
+        if (publicValues.length < 112) revert InvalidPublicValues();
 
         // Verify the ZK proof.
         _verify(publicValues, proofData);
@@ -79,15 +80,17 @@ contract StrataRollup {
         // Extract and validate public values.
         bytes32 oldRoot = bytes32(publicValues[:32]);
         bytes32 newRoot = bytes32(publicValues[32:64]);
-        uint64 proofNonce = uint64(bytes8(publicValues[64:72]));
-        bytes32 proofSoulHash = bytes32(publicValues[72:104]);
+        uint64 startNonce = uint64(bytes8(publicValues[64:72]));
+        uint64 endNonce = uint64(bytes8(publicValues[72:80]));
+        bytes32 proofSoulHash = bytes32(publicValues[80:112]);
 
         // Verify state continuity: proof must chain from current on-chain state.
         if (oldRoot != stateRoot) revert StateMismatch();
-        if (proofNonce != nonce + 1) revert StateMismatch();
+        if (startNonce != nonce + 1) revert StateMismatch();
+        if (endNonce < startNonce) revert StateMismatch();
         if (proofSoulHash != soulHash) revert StateMismatch();
 
-        nonce = proofNonce;
+        nonce = endNonce;
         stateRoot = newRoot;
 
         emit StateTransition(nonce, newRoot);

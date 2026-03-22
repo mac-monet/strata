@@ -104,17 +104,18 @@ pub async fn deploy_contract(
     Ok(*contract.address())
 }
 
-/// Submit a proven transition to the `StrataRollup` contract.
+/// Submit a proven batch of transitions to the `StrataRollup` contract.
 ///
-/// `proof_bytes` and `public_values` come from the prover output.
-/// `TransitionRecord` is encoded via `commonware_codec::Encode` as
-/// `memoryContent` calldata (posted for DA, not read on-chain).
-pub async fn post(
+/// `public_values` is 112 bytes: old_root, new_root, start_nonce, end_nonce, soul_hash.
+/// `proof_bytes` are kept off-chain (empty vec for mock contracts).
+/// Memory content for all transitions in the batch is concatenated as calldata
+/// for reconstruction/DA.
+pub async fn post_batch(
     config: &PosterConfig,
     signer: PrivateKeySigner,
     proof_bytes: Vec<u8>,
-    public_values: [u8; 104],
-    transition: &TransitionOutput,
+    public_values: [u8; 112],
+    transitions: &[TransitionOutput],
 ) -> Result<alloy::primitives::TxHash, AgentError> {
     let wallet = EthereumWallet::from(signer);
     let provider = ProviderBuilder::new()
@@ -122,7 +123,15 @@ pub async fn post(
         .connect_http(parse_rpc_url(&config.rpc_url)?);
 
     let contract = StrataRollup::new(config.contract_address, &provider);
-    let memory_content = transition.record.encode();
+
+    // Encode all transition records sequentially for DA/reconstruction.
+    let mut memory_content = Vec::new();
+    for t in transitions {
+        let encoded = t.record.encode();
+        // Length-prefix each record so the reconstructor can split them.
+        memory_content.extend_from_slice(&(encoded.len() as u32).to_be_bytes());
+        memory_content.extend_from_slice(&encoded);
+    }
 
     let tx_hash = contract
         .submitTransition(

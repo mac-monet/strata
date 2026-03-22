@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent;
+pub mod batch;
 pub mod embed;
 pub mod error;
 pub mod llm;

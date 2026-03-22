@@ -92,14 +92,26 @@ async fn reconstruct_matches_posted_state() {
 
     let contract_address = *contract.address();
 
-    // Post both transitions
+    // Post both transitions individually (each as a single-transition batch)
     for transition in &transitions {
         let memory_content = transition.record.encode();
+        let nonce = transition.record.input.nonce.get();
+        let pv = strata_agent::pipeline::batch_public_values(
+            transition.old_state.vector_index_root.as_bytes(),
+            transition.new_state.vector_index_root.as_bytes(),
+            nonce,
+            nonce,
+            transition.old_state.soul_hash.as_bytes(),
+        );
+        // Length-prefix the record as post_batch does
+        let mut encoded = Vec::new();
+        encoded.extend_from_slice(&(memory_content.len() as u32).to_be_bytes());
+        encoded.extend_from_slice(&memory_content);
         contract
             .submitTransition(
-                Bytes::copy_from_slice(&transition.public_values),
+                Bytes::copy_from_slice(&pv),
                 Bytes::new(), // empty proof — mock verifier
-                Bytes::from(memory_content),
+                Bytes::from(encoded),
             )
             .send()
             .await
