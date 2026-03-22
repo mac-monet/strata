@@ -96,10 +96,11 @@ async fn flush(
     }
 
     // Generate proof (if prover configured).
-    if let Some(prover_config) = prover {
+    let proof_bytes = if let Some(prover_config) = prover {
         match prover::prove_batch(prover_config, &batch).await {
             Ok(bytes) => {
                 eprintln!("batch: proof generated ({} bytes)", bytes.len());
+                bytes
             }
             Err(e) => {
                 eprintln!("batch: proof generation failed: {e}");
@@ -108,7 +109,9 @@ async fn flush(
                 return;
             }
         }
-    }
+    } else {
+        vec![]
+    };
 
     // Build public values.
     let public_values = pipeline::batch_public_values(
@@ -119,8 +122,8 @@ async fn flush(
         first.old_state.soul_hash.as_bytes(),
     );
 
-    // Post on-chain (proof bytes kept off-chain).
-    match post_with_retry(posting, public_values, &batch).await {
+    // Post on-chain.
+    match post_with_retry(posting, public_values, proof_bytes, &batch).await {
         Ok(hash) => {
             eprintln!(
                 "batch: posted nonce {start_nonce}..{end_nonce}, tx={hash}"
@@ -142,6 +145,7 @@ const POST_RETRY_BASE_MS: u64 = 500;
 async fn post_with_retry(
     posting: &PostingConfig,
     public_values: [u8; 112],
+    proof_bytes: Vec<u8>,
     transitions: &[TransitionOutput],
 ) -> Result<alloy::primitives::TxHash, AgentError> {
     let mut last_err = None;
@@ -149,7 +153,7 @@ async fn post_with_retry(
         match poster::post_batch(
             &posting.poster,
             posting.signer.clone(),
-            vec![], // proof bytes off-chain
+            proof_bytes.clone(),
             public_values,
             transitions,
         )
@@ -204,6 +208,7 @@ pub async fn write_wal(path: &PathBuf, transitions: &[TransitionOutput]) -> Resu
             .map_err(|e| format!("write WAL: {e}"))?;
     }
     file.flush().await.map_err(|e| format!("flush WAL: {e}"))?;
+    file.sync_data().await.map_err(|e| format!("sync WAL: {e}"))?;
     Ok(())
 }
 

@@ -103,7 +103,7 @@ contract StrataRollup {
     ) internal view virtual {
         if (verifier == address(0)) revert VerificationFailed();
 
-        (bool success, ) = verifier.staticcall(
+        (bool success, bytes memory returnData) = verifier.staticcall(
             abi.encodeWithSignature(
                 "verify(bytes,bytes,bytes32,bytes32)",
                 publicValues,
@@ -113,5 +113,9 @@ contract StrataRollup {
             )
         );
         if (!success) revert VerificationFailed();
+        if (returnData.length >= 32) {
+            bool verified = abi.decode(returnData, (bool));
+            if (!verified) revert VerificationFailed();
+        }
     }
 }
