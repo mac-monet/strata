@@ -104,10 +104,15 @@ fn agent_card_returns_valid_json() {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let card: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
-        assert_eq!(card["name"], "Strata Agent");
+        assert_eq!(card["name"], "Strata");
         assert_eq!(card["version"], "0.1.0");
         assert_eq!(card["capabilities"]["streaming"], false);
+        assert_eq!(card["capabilities"]["zkProofs"], true);
+        assert_eq!(card["capabilities"]["persistentMemory"], true);
         assert!(!card["skills"].as_array().unwrap().is_empty());
+        // Live state is surfaced in the card.
+        assert!(card["state"]["soulHash"].is_string());
+        assert!(card["state"]["nonce"].is_number());
     });
 }
 

@@ -287,7 +287,7 @@ fn main() {
         if identity_config.registry_address != Address::ZERO {
             if let Ok(key_hex) = std::env::var("OPERATOR_KEY") {
                 let signer: PrivateKeySigner = key_hex.parse().expect("invalid OPERATOR_KEY");
-                match identity::register(&identity_config, signer, rollup_address).await {
+                match identity::register(&identity_config, signer, rollup_address, *agent_state.soul_hash.as_bytes()).await {
                     Ok(id) => {
                         identity_config.agent_id = id;
                         eprintln!("ERC-8004 identity ready: agent #{id}");

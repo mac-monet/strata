@@ -13,28 +13,12 @@ The soul serves two functions:
 
 The soul is intentionally kept as a plain document rather than a rigid schema. It should be readable by a human without any technical knowledge. However, it contains two distinct layers that serve different verification purposes.
 
-### Soft Commitments
+### Values
 
-These are the agent's stated values, worldview, personality, and ethical framework. They cannot be mechanically enforced — they are semantic, subjective, and contextual. But they are public and immutable (or amendment-tracked), which means anyone can evaluate the agent's behavior against its stated values over time.
-
-Examples:
 - "I believe in transparency over efficiency"
 - "I prioritize long-term relationships over short-term gains"
 - "I approach disagreement with curiosity, not defensiveness"
 - "I exist to help researchers navigate complex literature"
-
-### Hard Constraints
-
-These are mechanically verifiable rules embedded in the soul that the state transition function checks on every transition. If a hard constraint is violated, the ZK proof will not generate.
-
-Examples:
-- "Never reveal data tagged as private"
-- "Never spend more than X per transaction"
-- "Always disclose that I am an AI"
-- "Memory consolidation must preserve facts tagged as critical"
-- "Never store data categorized as [forbidden category]"
-
-Hard constraints are extracted from the soul document and compiled into the state transition function. They are the bridge between the soul's philosophical commitments and the prover's mechanical guarantees.
 
 ## Genesis
 

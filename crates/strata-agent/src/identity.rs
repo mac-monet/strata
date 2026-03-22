@@ -37,10 +37,16 @@ pub struct IdentityConfig {
 ///
 /// If `agent_id` is 0, mints a new agent identity and returns the new ID.
 /// Otherwise updates the existing identity. Skips transactions if values already match.
+///
+/// Sets three metadata keys:
+/// - `strata.rollupContract` — the rollup contract address (state roots + ZK proofs)
+/// - `strata.soulHash` — hash of the agent's soul document (identity + constraints)
+/// - `strata.type` — agent archetype identifier ("zkCognition/v1")
 pub async fn register(
     config: &IdentityConfig,
     signer: PrivateKeySigner,
     rollup_address: Address,
+    soul_hash: [u8; 32],
 ) -> Result<u64, AgentError> {
     let signer_address = signer.address();
     let wallet = EthereumWallet::from(signer);
@@ -185,6 +191,50 @@ pub async fn register(
             .await
             .map_err(|e| AgentError::Identity(format!("setMetadata watch failed: {e}")))?;
         eprintln!("setMetadata confirmed: {tx_hash}");
+    }
+
+    // 3. Set soul hash metadata — lets anyone verify the agent's constitution on-chain.
+    let soul_meta = Bytes::from(soul_hash.to_vec());
+    let current_soul = registry
+        .getMetadata(agent_id, "strata.soulHash".to_string())
+        .call()
+        .await
+        .unwrap_or_default();
+    if current_soul != soul_meta {
+        eprintln!("setting strata.soulHash metadata");
+        let tx_hash = registry
+            .setMetadata(agent_id, "strata.soulHash".to_string(), soul_meta)
+            .send()
+            .await
+            .map_err(|e| AgentError::Identity(format!("setMetadata(soulHash) send failed: {e}")))?
+            .watch()
+            .await
+            .map_err(|e| AgentError::Identity(format!("setMetadata(soulHash) watch failed: {e}")))?;
+        eprintln!("strata.soulHash confirmed: {tx_hash}");
+    } else {
+        eprintln!("strata.soulHash metadata already set, skipping");
+    }
+
+    // 4. Set agent type metadata.
+    let type_meta = Bytes::from(b"zkCognition/v1".to_vec());
+    let current_type = registry
+        .getMetadata(agent_id, "strata.type".to_string())
+        .call()
+        .await
+        .unwrap_or_default();
+    if current_type != type_meta {
+        eprintln!("setting strata.type metadata");
+        let tx_hash = registry
+            .setMetadata(agent_id, "strata.type".to_string(), type_meta)
+            .send()
+            .await
+            .map_err(|e| AgentError::Identity(format!("setMetadata(type) send failed: {e}")))?
+            .watch()
+            .await
+            .map_err(|e| AgentError::Identity(format!("setMetadata(type) watch failed: {e}")))?;
+        eprintln!("strata.type confirmed: {tx_hash}");
+    } else {
+        eprintln!("strata.type metadata already set, skipping");
     }
 
     let id: u64 = agent_id.try_into().unwrap_or(0);

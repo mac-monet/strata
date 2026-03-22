@@ -219,28 +219,69 @@ async fn health() -> StatusCode {
 async fn agent_card<E: RStorage + Clock + Metrics>(
     State(state): State<Arc<AppState<E>>>,
 ) -> Json<serde_json::Value> {
+    let id = &state.identity;
+    let base_url = id.agent_base_url.trim_end_matches('/');
+
+    // Grab live state for the card.
+    let config = state.config.lock().await;
+    let core = &config.state;
+
     let mut card = serde_json::json!({
-        "name": "Strata Agent",
-        "description": "General-purpose agent with persistent, verifiable memory",
+        "name": "Strata",
+        "description": "An immortal AI agent whose cognition is a ZK rollup on Base. Every memory, decision, and state transition is proven in zero knowledge and posted on-chain — auditable, forkable, and reconstructible by anyone from genesis.",
+        "url": format!("{base_url}/a2a"),
         "version": "0.1.0",
-        "capabilities": { "streaming": false, "pushNotifications": false },
+        "capabilities": {
+            "streaming": false,
+            "pushNotifications": false,
+            "stateVerification": true,
+            "zkProofs": true,
+            "persistentMemory": true
+        },
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
-        "skills": [{
-            "id": "general",
-            "name": "General",
-            "description": "General purpose agent with persistent memory",
-            "tags": ["memory", "general"]
-        }]
+        "skills": [
+            {
+                "id": "memory",
+                "name": "Verifiable Memory",
+                "description": "Persistent semantic memory backed by a binary vector database. Every memory is embedded, indexed in a Merkle Mountain Range, and its inclusion is ZK-provable. Memories survive across conversations and operator changes.",
+                "tags": ["memory", "recall", "remember", "vector-search", "zk-proven"]
+            },
+            {
+                "id": "onchain-query",
+                "name": "On-Chain Query",
+                "description": "Query blockchain state, read contracts, check balances, and investigate on-chain activity. The agent can execute shell commands to interact with RPC endpoints and chain tooling.",
+                "tags": ["blockchain", "base", "ethereum", "contracts", "query"]
+            },
+            {
+                "id": "verify",
+                "name": "State Verification",
+                "description": "Any agent or client can verify this agent's integrity: check its ZK proofs, replay its state from genesis, read its soul document, and compare stated values against observed behavior.",
+                "tags": ["verification", "zk-proof", "trust", "audit", "reconstruction"]
+            }
+        ],
+        "documentationUrl": "https://github.com/anthropics/strata",
+        "provider": {
+            "organization": "Strata",
+            "url": base_url
+        }
     });
 
-    let id = &state.identity;
     card["identity"] = serde_json::json!({
         "erc8004": {
             "agentId": id.agent_id,
             "registry": format!("{:#x}", id.registry_address),
             "chain": "eip155:8453"
         }
+    });
+
+    // Live on-chain state — lets other agents verify without extra RPC calls.
+    card["state"] = serde_json::json!({
+        "soulHash": format!("0x{}", hex::encode(core.soul_hash.as_bytes())),
+        "vectorIndexRoot": format!("0x{}", hex::encode(core.vector_index_root.as_bytes())),
+        "nonce": core.nonce,
+        "rollupContract": format!("eip155:8453:{:#x}", state.rollup_address),
+        "proofEndpoint": format!("{base_url}/proof/{{nonce}}")
     });
 
     Json(card)
@@ -252,27 +293,52 @@ async fn agent_registration<E: RStorage + Clock + Metrics>(
     let id = &state.identity;
     let base_url = id.agent_base_url.trim_end_matches('/');
 
+    let config = state.config.lock().await;
+    let core = &config.state;
+
     Json(serde_json::json!({
         "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-        "name": "Strata Agent",
-        "description": "A persistent, verifiable AI agent whose cognitive state lives on-chain as a custom rollup. Every memory and state transition is ZK-proven and posted to Base.",
+        "name": "Strata",
+        "description": "An immortal AI agent running as a ZK rollup on Base. Cognition is the state transition function — every memory and decision is proven in zero knowledge via OpenVM, posted on-chain, and reconstructible by anyone from genesis. The agent carries an on-chain soul document defining its values and hard constraints enforced by the prover.",
         "image": "",
         "services": [
             {
                 "name": "A2A",
+                "description": "Agent-to-Agent protocol endpoint for task-based interaction with persistent multi-turn sessions",
                 "endpoint": format!("{base_url}/.well-known/agent.json"),
                 "version": "0.1.0"
             },
             {
                 "name": "agentWallet",
+                "description": "Rollup contract on Base — holds funds, posts state roots, verifies ZK proofs",
                 "endpoint": format!("eip155:8453:{:#x}", state.rollup_address)
+            },
+            {
+                "name": "proofAPI",
+                "description": "Retrieve ZK proofs for any state transition by nonce",
+                "endpoint": format!("{base_url}/proof/{{nonce}}")
             }
         ],
         "registrations": [{
             "agentId": id.agent_id,
             "agentRegistry": format!("eip155:8453:{:#x}", id.registry_address)
         }],
-        "supportedTrust": [],
+        "supportedTrust": [
+            {
+                "type": "zkProof",
+                "description": "Every state transition (memory writes, nonce increments, Merkle updates) is proven in zero knowledge via OpenVM. Proofs are posted on-chain and independently verifiable.",
+                "verificationEndpoint": format!("{base_url}/proof/{{nonce}}")
+            },
+            {
+                "type": "soulAttestation",
+                "description": "The agent's soul document — its values, identity, and hard constraints — is committed on-chain at genesis. Anyone can read it, replay the agent's full interaction history from L1 blobs, and judge whether the agent lives by its constitution.",
+                "soulHash": format!("0x{}", hex::encode(core.soul_hash.as_bytes()))
+            },
+            {
+                "type": "reconstruction",
+                "description": "The agent's entire cognitive state can be reconstructed from on-chain data by replaying state transitions from genesis. No trust in the operator required — the L1 is the source of truth."
+            }
+        ],
         "active": true,
         "x402Support": false
     }))

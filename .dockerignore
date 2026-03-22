@@ -1,0 +1,9 @@
+target/
+.git/
+.env
+*.wal
+*.json.tmp
+strata-snapshot.json
+proofs/
+models/
+strata-openvm/
