@@ -95,7 +95,7 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
                 .map_err(|e| err(format!("ABI decode failed: {e}")))?;
 
         // Third field is memoryContent (the unnamed `_2` parameter).
-        // May contain a single record (legacy) or length-prefixed batch.
+        // Contains length-prefixed batch of transition records.
         let memory_bytes = decoded_call._2;
         let batch = decode_memory_content(&memory_bytes, &cfg)
             .map_err(|e| err(format!("record decode failed for tx {tx_hash}: {e}")))?;
@@ -143,6 +143,7 @@ pub async fn reconstruct(config: &PosterConfig) -> Result<ReconstructedState, Ag
 /// Batch format: `[u32 BE length][record bytes][u32 BE length][record bytes]...`
 /// Legacy format: raw `TransitionRecord` bytes (no length prefix).
 #[doc(hidden)]
+/// Decode length-prefixed batch of transition records.
 pub fn decode_memory_content(
     bytes: &[u8],
     cfg: &TransitionRecordCfg,
@@ -150,44 +151,21 @@ pub fn decode_memory_content(
     if bytes.is_empty() {
         return Err("empty memory content".into());
     }
-
-    // Try batch format first: read length prefix and see if it makes sense.
-    if bytes.len() >= 4 {
-        let first_len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-        // Heuristic: if the first 4 bytes parse as a reasonable length that fits
-        // within the remaining data, treat as batch format.
-        if first_len > 0 && first_len <= bytes.len() - 4 {
-            if let Ok(records) = decode_batch(bytes, cfg) {
-                return Ok(records);
-            }
-        }
-    }
-
-    // Fall back to legacy single-record format.
-    let record = TransitionRecord::decode_cfg(bytes, cfg)
-        .map_err(|e| format!("legacy decode: {e}"))?;
-    Ok(vec![record])
-}
-
-/// Decode length-prefixed batch of transition records.
-fn decode_batch(
-    mut bytes: &[u8],
-    cfg: &TransitionRecordCfg,
-) -> Result<Vec<TransitionRecord>, String> {
+    let mut remaining = bytes;
     let mut records = Vec::new();
-    while bytes.len() >= 4 {
-        let len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-        bytes = &bytes[4..];
-        if bytes.len() < len {
-            return Err(format!("truncated record: need {len} bytes, have {}", bytes.len()));
+    while remaining.len() >= 4 {
+        let len = u32::from_be_bytes([remaining[0], remaining[1], remaining[2], remaining[3]]) as usize;
+        remaining = &remaining[4..];
+        if remaining.len() < len {
+            return Err(format!("truncated record: need {len} bytes, have {}", remaining.len()));
         }
-        let record = TransitionRecord::decode_cfg(&bytes[..len], cfg)
-            .map_err(|e| format!("batch record decode: {e}"))?;
+        let record = TransitionRecord::decode_cfg(&remaining[..len], cfg)
+            .map_err(|e| format!("record decode: {e}"))?;
         records.push(record);
-        bytes = &bytes[len..];
+        remaining = &remaining[len..];
     }
-    if !bytes.is_empty() {
-        return Err(format!("trailing {} bytes after batch", bytes.len()));
+    if !remaining.is_empty() {
+        return Err(format!("trailing {} bytes after batch", remaining.len()));
     }
     Ok(records)
 }

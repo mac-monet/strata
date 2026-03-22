@@ -196,19 +196,6 @@ fn reconstruction_batch_decode_round_trip() {
 }
 
 #[test]
-fn reconstruction_legacy_single_record() {
-    let t = make_transition(0, 1);
-    let record_bytes = t.record.encode();
-
-    // Legacy format: raw record bytes, no length prefix.
-    let cfg = TransitionRecordCfg::default();
-    let records = strata_agent::reconstruct::decode_memory_content(&record_bytes, &cfg).unwrap();
-
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].input.nonce.get(), 1);
-}
-
-#[test]
 fn reconstruction_empty_bytes_is_error() {
     let cfg = TransitionRecordCfg::default();
     let result = strata_agent::reconstruct::decode_memory_content(&[], &cfg);
