@@ -20,6 +20,7 @@ use crate::error::AgentError;
 use crate::llm::{self, LlmClient};
 use crate::pipeline::TransitionOutput;
 use crate::poster::{self, PosterConfig};
+use crate::prover::{self, ProverConfig};
 use crate::tools::ToolExecutor;
 
 /// Optional on-chain posting configuration.
@@ -43,6 +44,7 @@ pub struct AppState<E: RStorage + Clock + Metrics> {
     pub(crate) executor: tokio::sync::Mutex<ToolExecutor<E>>,
     pub(crate) transitions: tokio::sync::Mutex<Vec<TransitionOutput>>,
     pub(crate) posting: Option<PostingConfig>,
+    pub(crate) prover: Option<ProverConfig>,
 }
 
 impl<E: RStorage + Clock + Metrics> AppState<E> {
@@ -51,6 +53,7 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
         client: LlmClient,
         executor: ToolExecutor<E>,
         posting: Option<PostingConfig>,
+        prover: Option<ProverConfig>,
     ) -> Self {
         Self {
             config: tokio::sync::Mutex::new(config),
@@ -58,6 +61,7 @@ impl<E: RStorage + Clock + Metrics> AppState<E> {
             executor: tokio::sync::Mutex::new(executor),
             transitions: tokio::sync::Mutex::new(Vec::new()),
             posting,
+            prover,
         }
     }
 }
@@ -259,7 +263,22 @@ async fn handle_message_send<E: RStorage + Clock + Metrics>(
         Ok(result) => {
             if let Some(transition) = result.transition {
                 if let Some(posting) = &state.posting {
-                    if let Err(e) = post_with_retry(posting, &transition).await {
+                    let proof_bytes = if let Some(prover_config) = &state.prover {
+                        match prover::prove(prover_config, &transition).await {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                return rpc_error(
+                                    StatusCode::OK,
+                                    id,
+                                    INTERNAL_ERROR,
+                                    format!("proof generation failed: {e}"),
+                                );
+                            }
+                        }
+                    } else {
+                        vec![] // mock mode
+                    };
+                    if let Err(e) = post_with_retry(posting, &transition, proof_bytes).await {
                         return rpc_error(
                             StatusCode::OK,
                             id,
@@ -307,6 +326,7 @@ const POST_RETRY_BASE_MS: u64 = 500;
 async fn post_with_retry(
     posting: &PostingConfig,
     transition: &TransitionOutput,
+    proof_bytes: Vec<u8>,
 ) -> Result<(), AgentError> {
     let nonce = transition.new_state.nonce.get();
     let mut last_err = None;
@@ -314,7 +334,7 @@ async fn post_with_retry(
         match poster::post(
             &posting.poster,
             posting.signer.clone(),
-            vec![], // empty proof — mock verifier
+            proof_bytes.clone(),
             transition.public_values,
             transition,
         )

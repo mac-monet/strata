@@ -1,3 +1,11 @@
 /target
 .cachebro/
 .cx-index.db
+
+# OpenVM prover outputs
+strata-openvm/*.proof
+strata-openvm/*.proof.json
+strata-openvm/*.public_values
+strata-openvm/*.commit.json
+strata-openvm/.prove-input-*.json
+strata-openvm/test-input.json

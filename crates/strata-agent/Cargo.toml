@@ -15,6 +15,7 @@ strata-vector-db = { path = "../vector-db" }
 alloy = { version = "1", features = ["provider-http", "signers", "signer-local", "contract", "sol-types", "consensus", "node-bindings"] }
 axum = "0.8"
 commonware-codec = "2026.3.0"
+hex = "0.4"
 commonware-runtime = "2026.3.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

@@ -198,6 +198,7 @@ fn server_posts_transition_on_interaction() {
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
             Some(posting),
+            None, // no prover
         ));
 
         // Send message through the HTTP handler
@@ -300,6 +301,7 @@ fn server_posts_two_transitions_sequentially() {
             client,
             ToolExecutor::new(db, Box::new(common::FixedEmbedder)),
             Some(posting),
+            None, // no prover
         ));
 
         // First interaction

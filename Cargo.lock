@@ -4994,6 +4994,7 @@ dependencies = [
  "axum",
  "commonware-codec",
  "commonware-runtime",
+ "hex",
  "http-body-util",
  "hyper",
  "reqwest",

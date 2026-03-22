@@ -1,4 +1,5 @@
 use std::num::{NonZeroU16, NonZeroU64, NonZeroUsize};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use commonware_runtime::{Runner as _, tokio};
@@ -12,6 +13,7 @@ use strata_agent::agent::AgentConfig;
 use strata_agent::embed::ApiEmbedder;
 use strata_agent::llm::LlmClient;
 use strata_agent::poster::{self, PosterConfig};
+use strata_agent::prover::{ProofLevel, ProverConfig};
 use strata_agent::server::{self, AppState, PostingConfig};
 use strata_agent::tools::ToolExecutor;
 
@@ -137,6 +139,18 @@ fn main() {
             None
         };
 
+        // Wire optional ZK prover.
+        let prover = if let Ok(dir) = std::env::var("PROVER_DIR") {
+            let proof_level = std::env::var("PROOF_LEVEL")
+                .map(|s| ProofLevel::from_str(&s))
+                .unwrap_or_default();
+            let config = ProverConfig::new(PathBuf::from(&dir), proof_level);
+            eprintln!("prover enabled: {} (level: {})", dir, config.proof_level.as_str());
+            Some(config)
+        } else {
+            None
+        };
+
         let state = Arc::new(AppState::new(
             AgentConfig {
                 soul,
@@ -145,6 +159,7 @@ fn main() {
             llm_client,
             executor,
             posting,
+            prover,
         ));
 
         eprintln!("agent ready — POST http://{addr}/a2a");
